@@ -4,3 +4,4 @@ tensorboard_logs/
 *.DS_Store
 **/.venv/
 *.pdf
+.vscode/
