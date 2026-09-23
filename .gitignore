@@ -4,4 +4,8 @@ tensorboard_logs/
 *.DS_Store
 **/.venv/
 *.pdf
-.vscode/
+
+# .vscode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
