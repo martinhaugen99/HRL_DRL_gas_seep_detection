@@ -1,4 +1,5 @@
 # train_DDQN.py
+import argparse
 import gymnasium as gym
 import torch
 from stable_baselines3 import DQN
@@ -18,6 +19,9 @@ from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
 
 def main():
     torch.set_num_threads(1) # the network is tiny: extra torch threads only compete with the env workers for CPU
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: NAME below)")
+    args = parser.parse_args()
 
     MAX_EPS_LEN = 230
     NUM_ENVS = 12
@@ -43,7 +47,7 @@ def main():
         #     keys_you_want_to_keep.append("c_over_threshold_maps")
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
                 
-    NAME = "NEW_plume_GP_clipped_RWD_min_steps_in_plume"
+    NAME = args.name or "NEW_plume_GP_clipped_RWD_min_steps_in_plume"
    
 
     saving_location = f"../trained-agents/{NAME}"

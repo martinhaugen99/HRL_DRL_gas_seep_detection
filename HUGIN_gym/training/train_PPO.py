@@ -25,6 +25,7 @@ def main():
     preset_group.add_argument("--smoke", action="store_true")
     preset_group.add_argument("--paper", action="store_true")
     preset_group.add_argument("--full", action="store_true")
+    parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: the preset's name)")
     args = parser.parse_args()
     if args.smoke:
         config = SMOKE_CONFIG
@@ -82,7 +83,7 @@ def main():
         ]
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
 
-    NAME = config["name"]
+    NAME = args.name or config["name"]
     saving_location = f"../trained-agents/{NAME}"
     loading_location = "../trained-agents/..._what_so_ever_..."
 

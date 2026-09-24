@@ -1,4 +1,5 @@
 # train_SAC.py
+import argparse
 import gymnasium as gym
 import torch
 from stable_baselines3 import SAC
@@ -17,6 +18,9 @@ from HUGIN_gym.envs.wrappers.continuous_wrapper import ContinuousToDiscreteActio
 
 def main():
     torch.set_num_threads(1)  # the network is tiny: extra torch threads only compete with the env workers for CPU
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: NAME below)")
+    args = parser.parse_args()
 
     MAX_EPS_LEN = 460
     NUM_ENVS = 12
@@ -66,7 +70,7 @@ def main():
         ]
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
 
-    NAME = "SAC_space_GT_not_clipped_RWD"
+    NAME = args.name or "SAC_space_GT_not_clipped_RWD"
 
     saving_location = f"../trained-agents/{NAME}"
     loading_location = "../trained-agents/..._what_so_ever_..."
