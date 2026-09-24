@@ -35,7 +35,7 @@ def main():
     GP = config["gp"]
     ACCURACY_GOALS = [0.90, 1.0, 1.0] #0.9
     SUB_AGENT_TRAIN_ON_GP = True
-    AGENT_TYPE = "SPACE"
+    AGENT_TYPE = "PLUME"
 
     if AGENT_TYPE == "BORDER":
         from HUGIN_gym.agents.feature_extractor.agent3_border_explore import (
@@ -74,7 +74,7 @@ def main():
             #"GT_c_over_threshold_maps_downsampled",
             "local_GT",
             "plume_coverage",
-            #"space_coverage",
+            "space_coverage",
             "distance_from_max",
         ]
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"

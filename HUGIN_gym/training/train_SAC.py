@@ -21,7 +21,7 @@ def main():
     GP = False
     ACCURACY_GOALS = [0.9, 1.0, 1.0]
     SUB_AGENT_TRAIN_ON_GP = False
-    AGENT_TYPE = "SPACE"
+    AGENT_TYPE = "PLUME"
 
     if AGENT_TYPE == "BORDER":
         from HUGIN_gym.agents.feature_extractor.agent3_border_explore import (
