@@ -8,6 +8,9 @@ from stable_baselines3.common.type_aliases import TrainFrequencyUnit
 def confirm_overwrite(directory: str):
     if os.path.exists(directory) and os.listdir(directory):
             print(f"\n⚠️  Warning: The directory '{directory}' already exists and is not empty.")
+            if not sys.stdin.isatty(): # batch job (e.g. Slurm): nobody can answer, so never overwrite
+                print("❌ No terminal to confirm overwriting. Aborting; choose a new run name.")
+                sys.exit(1)
             while True:
                 response = input("Do you want to continue and potentially overwrite files? [y/n]: ").strip().lower()
                 if response == "y":
