@@ -21,10 +21,10 @@ def main():
 
     MAX_EPS_LEN = 230
     NUM_ENVS = 12
-    GP =True
+    GP = False  # space agent doesn't use the concentration map, so skip the costly GP fit
     ACCURACY_GOALS = [0.9,1.0,1.0]
     SUB_AGENT_TRAIN_ON_GP = True
-    AGENT_TYPE = "PLUME"
+    AGENT_TYPE = "SPACE"
 
     if AGENT_TYPE == "BORDER":
         from HUGIN_gym.agents.feature_extractor.agent3_border_explore import AgentBoarderExplore as Agent
@@ -43,7 +43,7 @@ def main():
         #     keys_you_want_to_keep.append("c_over_threshold_maps")
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
                 
-    NAME = "NEW_plume_GP_clipped_RWD_min_steps_in_plume"
+    NAME = "DDQN_space"
    
 
     saving_location = f"../trained-agents/{NAME}"
