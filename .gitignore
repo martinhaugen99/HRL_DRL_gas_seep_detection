@@ -9,3 +9,6 @@ tensorboard_logs/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
+
+# build files
+*.egg-info/
