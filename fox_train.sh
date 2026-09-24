@@ -2,7 +2,7 @@
 # Fox (UiO) Slurm job: trains the space agent with DQN, PPO and SAC in parallel, one array task per algorithm.
 # Submit from the repository root:   sbatch fox_train.sh
 # Only one algorithm, e.g. PPO:      sbatch --array=1 fox_train.sh
-#SBATCH --account=ecXXX              # <-- your Educloud project
+#SBATCH --account=ec12               # <-- your Educloud project
 #SBATCH --job-name=hugin-space
 #SBATCH --partition=normal
 #SBATCH --array=0-2                  # 0 = DDQN, 1 = PPO (--paper), 2 = SAC
