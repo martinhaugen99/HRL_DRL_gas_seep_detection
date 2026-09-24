@@ -20,5 +20,6 @@ setup(
         "tqdm",
         "tensorboard",
         "scikit-learn>=1.8.0", # modifiable
+        "matplotlib",
     ],
 )

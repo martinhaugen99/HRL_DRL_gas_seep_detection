@@ -7,7 +7,7 @@ name = "HUGIN_gym"
 version = "0.1.0"
 description = "OpenAI Gym environment for the HUGIN AUV"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
     "gymnasium>=0.29.1",
@@ -20,6 +20,7 @@ dependencies = [
     "tensorboard",
     "scikit-learn>=1.8.0",
     "onnx",
+    "matplotlib",
 ]
 
 [tool.setuptools]
