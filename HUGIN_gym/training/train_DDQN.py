@@ -1,8 +1,9 @@
 # train_DDQN.py
 import gymnasium as gym
+import torch
 from stable_baselines3 import DQN
 import pickle # saving the stats
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 from HUGIN_gym.utils.io import confirm_overwrite
@@ -16,6 +17,7 @@ from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
 
 
 def main():
+    torch.set_num_threads(1) # the network is tiny: extra torch threads only compete with the env workers for CPU
 
     MAX_EPS_LEN = 230
     NUM_ENVS = 12
@@ -86,7 +88,7 @@ def main():
     dummy_env.close()
 
     env_fns = [make_env() for _ in range(NUM_ENVS)]
-    env = SubprocVecEnv(env_fns)
+    env = VecMonitor(SubprocVecEnv(env_fns)) # records episode reward/length for tensorboard, obs/rewards pass through unchanged
     policy_kwargs = dict(features_extractor_class=Agent)
     
     load_existing = False  # switch to False to train from scratch
@@ -110,7 +112,7 @@ def main():
             exploration_final_eps=0.05,  #0 .1
             verbose=0,
             policy_kwargs=policy_kwargs, # CNN as feature extractor!!
-            #tensorboard_log="./tensorboard_logs/",
+            tensorboard_log=f"{saving_location}/tensorboard", # live curves: tensorboard --logdir ../trained-agents
         )
 
     """WANDB below here: if needed"""
@@ -118,10 +120,11 @@ def main():
     # custom_callback = CustomWandbCallback()  # For your mean_q logging
 
     max_steps =  30_000_000
-    checkpoint_steps = 100_000_000 // NUM_ENVS # save every n steps, adjusted for number of parallel envs
+    checkpoint_steps = 2_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
+    stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
     # --- get max_return safely before SubprocVecEnv ---
 
-    stats_callback = EpisodeStatsCallback(max_episode_length=MAX_EPS_LEN,save_freq=checkpoint_steps, NUM_ENVS=NUM_ENVS,address=f"{saving_location}/episode_stats",N_states=N_STATES,GP=GP) # save every n steps, max episode length for _on_step being called only at the end of every episode
+    stats_callback = EpisodeStatsCallback(max_episode_length=MAX_EPS_LEN,save_freq=stats_steps, NUM_ENVS=NUM_ENVS,address=f"{saving_location}/episode_stats",N_states=N_STATES,GP=GP) # save every n steps, max episode length for _on_step being called only at the end of every episode
     checkpoint_callback = CheckpointCallback(save_freq=checkpoint_steps,save_path=f"{saving_location}/",name_prefix="DQN_checkpoint",save_replay_buffer=False) # True if desired
 
     # --- Saving a big DICT with all hyperparameters:---

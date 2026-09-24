@@ -1,8 +1,9 @@
 # train_SAC.py
 import gymnasium as gym
+import torch
 from stable_baselines3 import SAC
 import pickle
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 from HUGIN_gym.utils.io import confirm_overwrite
@@ -15,6 +16,7 @@ from HUGIN_gym.envs.wrappers.continuous_wrapper import ContinuousToDiscreteActio
 
 
 def main():
+    torch.set_num_threads(1)  # the network is tiny: extra torch threads only compete with the env workers for CPU
 
     MAX_EPS_LEN = 460
     NUM_ENVS = 12
@@ -120,7 +122,7 @@ def main():
     dummy_env.close()
 
     env_fns = [make_env() for _ in range(NUM_ENVS)]
-    env = SubprocVecEnv(env_fns)
+    env = VecMonitor(SubprocVecEnv(env_fns))  # records episode reward/length for tensorboard, obs/rewards pass through unchanged
     policy_kwargs = dict(features_extractor_class=Agent)
 
     load_existing = False
@@ -147,14 +149,16 @@ def main():
             target_update_interval=1,
             verbose=0,
             policy_kwargs=policy_kwargs,
+            tensorboard_log=f"{saving_location}/tensorboard",  # live curves: tensorboard --logdir ../trained-agents
         )
 
     max_steps = 10_000_000
-    checkpoint_steps = 5_500_000 // NUM_ENVS
+    checkpoint_steps = 2_000_000 // NUM_ENVS  # save the model every n steps, adjusted for number of parallel envs
+    stats_steps = 5_000_000 // NUM_ENVS  # save episode stats every n steps (each file holds all episodes so far)
 
     stats_callback = EpisodeStatsCallback(
         max_episode_length=MAX_EPS_LEN,
-        save_freq=checkpoint_steps,
+        save_freq=stats_steps,
         NUM_ENVS=NUM_ENVS,
         address=f"{saving_location}/episode_stats",
         N_states=N_STATES,

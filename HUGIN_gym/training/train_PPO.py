@@ -2,9 +2,10 @@
 import argparse
 
 import gymnasium as gym
+import torch
 from stable_baselines3 import PPO
 import pickle  # saving the stats
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 from HUGIN_gym.utils.io import confirm_overwrite
@@ -17,6 +18,8 @@ from HUGIN_gym.training.train_PPO_config import FULL_CONFIG, PAPER_CONFIG, SMOKE
 
 
 def main():
+    torch.set_num_threads(1)  # the network is tiny: extra torch threads only compete with the env workers for CPU
+
     parser = argparse.ArgumentParser()
     preset_group = parser.add_mutually_exclusive_group()
     preset_group.add_argument("--smoke", action="store_true")
@@ -138,7 +141,7 @@ def main():
     dummy_env.close()
 
     env_fns = [make_env() for _ in range(NUM_ENVS)]
-    env = SubprocVecEnv(env_fns)
+    env = VecMonitor(SubprocVecEnv(env_fns))  # records episode reward/length for tensorboard, obs/rewards pass through unchanged
 
     policy_kwargs = dict(features_extractor_class=Agent)
 
@@ -165,7 +168,7 @@ def main():
             max_grad_norm=0.5,
             verbose=0,
             policy_kwargs=policy_kwargs,
-            # tensorboard_log="./tensorboard_logs/",
+            tensorboard_log=f"{saving_location}/tensorboard",  # live curves: tensorboard --logdir ../trained-agents
         )
 
     max_steps = config["max_steps"]
