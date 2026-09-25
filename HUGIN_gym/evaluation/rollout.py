@@ -69,7 +69,11 @@ def run_episode(env,
         action, _ = model.predict(obs_input, deterministic=True)
 
         # ---- STEP ----
-        obs, reward, terminated, truncated, info = env.step(int(action))
+        # Box action space (e.g. SAC's continuous-to-discrete wrapper) needs the
+        # raw array so the wrapper can do its own discretization; Discrete spaces
+        # (PPO/DDQN) expect a plain int.
+        step_action = action if hasattr(env.action_space, "high") else int(action)
+        obs, reward, terminated, truncated, info = env.step(step_action)
         #if terminated== 1:
            # time.sleep(1.5)
             #print(reward)

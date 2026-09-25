@@ -126,7 +126,7 @@ def make_test_env(
 ###### test modes
 
 # Path to your SAC trained agent file (model.save(...))
-model_path_global = "../trained-agents/SAC_plume_GP_clipped_RWD_min_steps_in_plume/SAC_scratch"
+model_path_global = "trained-agents/SAC_space_GT_not_clipped_RWD/SAC_scratch.zip"
 
 
 def test_agent():

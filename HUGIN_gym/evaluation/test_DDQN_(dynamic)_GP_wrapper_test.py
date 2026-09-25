@@ -65,7 +65,7 @@ def make_test_env(GP=True,AGENT_TYPE="CHANGE", VIS_GP=True, VISUALISE = True,ker
 ###### test modes
 
 
-model_path_global = "../trained-agents/NEW_border_GP_clipped_RWD_WITH_distance_from_max_HALF_c_thresh_for_below_differentHYPER/DQN_scratch"#/space_diff_NEW_visited
+model_path_global = "trained-agents/DDQN_space/DQN_scratch.zip"
 
 def test_agent():
     VISUALISE = True      # Meshcat / real-world simulator
