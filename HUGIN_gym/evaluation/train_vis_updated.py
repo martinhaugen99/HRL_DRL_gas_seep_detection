@@ -8,15 +8,18 @@ from HUGIN_gym.utils.io import load_training_config_from_model
 # =========================
 # CONFIG
 # =========================
-training_stats_path = "../../../trained-agents/NEW_plume_GP_clipped_RWD_min_steps_in_plume"
-training_stats_path = "../../../trained-agents/HRL_PPO_GP_base_agents_GP_1G_term_0p1_uncertainty_AND_all_plume_covered_3_OPT_len_90prosent_d_base_agents_only_subtask_termination_correctHRL_feature_extr"
+#training_stats_path = "../../../trained-agents/NEW_plume_GP_clipped_RWD_min_steps_in_plume"
+#training_stats_path = "../../../trained-agents/HRL_PPO_GP_base_agents_GP_1G_term_0p1_uncertainty_AND_all_plume_covered_3_OPT_len_90prosent_d_base_agents_only_subtask_termination_correctHRL_feature_extr"
 #training_stats_path = "../../../trained-agents/SAC_space_GT_not_clipped_RWD"
-suffix = "episode_stats_2049996.pkl"#training_stats.pkl"
+#training_stats_path = "../../../trained_agents/DQN_gp_230steps_4218364" # DQN
+training_stats_path = "../../../trained_agents/PPO_gp_230steps_4218364" # PPO
+#training_stats_path = "../../../trained_agents/SAC_gp_230steps_4218364" # SAC
+suffix = "episode_stats_9999960.pkl"#training_stats.pkl"
 
 
 GP = True
 SUB_POLICY_GP = True
-AGENT_TYPE = "META"
+AGENT_TYPE = "PLUME"
 
 window_size = 500
 step = 10
