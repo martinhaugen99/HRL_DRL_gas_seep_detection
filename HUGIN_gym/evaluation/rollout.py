@@ -1,5 +1,6 @@
 import time
 import torch as th
+import gymnasium as gym
 
 def run_episode(env, 
                 model, 
@@ -69,7 +70,12 @@ def run_episode(env,
         action, _ = model.predict(obs_input, deterministic=True)
 
         # ---- STEP ----
-        obs, reward, terminated, truncated, info = env.step(int(action))
+        #obs, reward, terminated, truncated, info = env.step(int(action))
+        if isinstance(env.action_space, gym.spaces.Box):
+            step_action = action  # SAC: ContinuousToDiscreteActionWrapper maps it to a discrete action
+        else:
+            step_action = int(action)
+        obs, reward, terminated, truncated, info = env.step(step_action)
         #if terminated== 1:
            # time.sleep(1.5)
             #print(reward)
