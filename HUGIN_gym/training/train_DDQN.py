@@ -19,7 +19,7 @@ from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
 def main():
     torch.set_num_threads(1) # the network is tiny: extra torch threads only compete with the env workers for CPU
 
-    MAX_EPS_LEN = config["max_episode_length"]
+    MAX_EPS_LEN = 460
     NUM_ENVS = 12
     GP = False  # space agent doesn't use the concentration map, so skip the costly GP fit
     ACCURACY_GOALS = [0.9,1.0,1.0]
@@ -43,7 +43,7 @@ def main():
         #     keys_you_want_to_keep.append("c_over_threshold_maps")
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
                 
-    NAME = "DDQN_space"
+    NAME = "DDQN_space_eps_len_460"
    
 
     saving_location = f"../trained-agents/{NAME}"
