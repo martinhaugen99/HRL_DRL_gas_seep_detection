@@ -19,7 +19,7 @@ from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
 def main():
     torch.set_num_threads(1) # the network is tiny: extra torch threads only compete with the env workers for CPU
 
-    MAX_EPS_LEN = 230
+    MAX_EPS_LEN = config["max_episode_length"]
     NUM_ENVS = 12
     GP = False  # space agent doesn't use the concentration map, so skip the costly GP fit
     ACCURACY_GOALS = [0.9,1.0,1.0]
@@ -119,7 +119,7 @@ def main():
     # INIT (insert here)
     # custom_callback = CustomWandbCallback()  # For your mean_q logging
 
-    max_steps =  30_000_000
+    max_steps =  10_000_000
     checkpoint_steps = 2_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
     stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
     # --- get max_return safely before SubprocVecEnv ---
