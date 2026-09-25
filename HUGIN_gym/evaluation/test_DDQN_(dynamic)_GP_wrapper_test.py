@@ -18,7 +18,7 @@ from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
 ##### environment creator #####
 ###############################
 
-def make_test_env(GP=True,AGENT_TYPE="CHANGE", VIS_GP=True, VISUALISE = True,kernel_config=None, HRL=False, SUB_AGENT_TRAIN_ON_GP= False):
+def make_test_env(GP=True,AGENT_TYPE="PLUME", VIS_GP=True, VISUALISE = True,kernel_config=None, HRL=False, SUB_AGENT_TRAIN_ON_GP= False):
 
     base_env = gym.make(
         "HUGIN-v0",
@@ -65,7 +65,7 @@ def make_test_env(GP=True,AGENT_TYPE="CHANGE", VIS_GP=True, VISUALISE = True,ker
 ###### test modes
 
 
-model_path_global = "../trained-agents/NEW_border_GP_clipped_RWD_WITH_distance_from_max_HALF_c_thresh_for_below_differentHYPER/DQN_scratch"#/space_diff_NEW_visited
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/DQN_gp_230steps_4218364/DQN_scratch.zip"#/space_diff_NEW_visited
 
 def test_agent():
     VISUALISE = True      # Meshcat / real-world simulator

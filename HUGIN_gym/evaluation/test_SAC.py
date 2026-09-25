@@ -63,7 +63,7 @@ class ContinuousToDiscreteActionWrapper(gym.ActionWrapper):
 
 def make_test_env(
     GP=True,
-    AGENT_TYPE="CHANGE",
+    AGENT_TYPE="PLUME",
     VIS_GP=True,
     VISUALISE=True,
     kernel_config=None,
@@ -126,7 +126,7 @@ def make_test_env(
 ###### test modes
 
 # Path to your SAC trained agent file (model.save(...))
-model_path_global = "../trained-agents/SAC_plume_GP_clipped_RWD_min_steps_in_plume/SAC_scratch"
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/SAC_gp_230steps_4218364/SAC_scratch.zip"
 
 
 def test_agent():

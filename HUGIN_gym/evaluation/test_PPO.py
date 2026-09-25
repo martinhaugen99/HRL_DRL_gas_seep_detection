@@ -28,7 +28,7 @@ import time
 
 def make_test_env(
     GP=True,
-    AGENT_TYPE="CHANGE",
+    AGENT_TYPE="PLUME",
     VIS_GP=True,
     VISUALISE=True,
     kernel_config=None,
@@ -85,10 +85,10 @@ def make_test_env(
 
 # Path to your PPO trained agent directory (where PPO_scratch is saved)
 #model_path_global = "../trained-agents/PPO_border_GP_d_to_max_only_terminate_after_plume/PPO_scratch"
-model_path_global = "../trained-agents/paper_2D_PPO_space_10M/PPO_scratch"
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/PPO_gp_230steps_4218364/PPO_scratch.zip"
 
 def test_agent():
-    VISUALISE = False  # Meshcat / real-world simulator
+    VISUALISE = True  # Meshcat / real-world simulator
     VIS_STATE_SPACE = False
     GP = True          # GP on/off
     VIS_GP = False       # GP visualisation
@@ -275,7 +275,7 @@ def test_lawnmower_auto():
     # baseline: SPACE agent for coverage
     env, gp_vis = make_test_env(
         GP=GP,
-        AGENT_TYPE="SPACE",
+        AGENT_TYPE="PLUME",
         VIS_GP=VIS_GP,
         VISUALISE=VISUALISE,
         kernel_config=None,
@@ -432,7 +432,7 @@ def manual_control():
     VIS_GP = False
     EPISODES = 20
     MAX_EPS_LEN = 8000
-    AGENT_TYPE = "SPACE"
+    AGENT_TYPE = "PLUME"
     HRL = False
     SUB_AGENT_TRAIN_ON_GP = True
 
