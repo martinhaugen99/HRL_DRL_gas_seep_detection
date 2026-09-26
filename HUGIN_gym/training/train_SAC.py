@@ -22,11 +22,11 @@ def main():
     parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: NAME below)")
     args = parser.parse_args()
 
-    MAX_EPS_LEN = 460
+    MAX_EPS_LEN = 230
     NUM_ENVS = 12
-    GP = False
+    GP = True
     ACCURACY_GOALS = [0.9, 1.0, 1.0]
-    SUB_AGENT_TRAIN_ON_GP = False
+    SUB_AGENT_TRAIN_ON_GP = True
     AGENT_TYPE = "PLUME"
 
     if AGENT_TYPE == "BORDER":
@@ -130,7 +130,7 @@ def main():
 
     env_fns = [make_env() for _ in range(NUM_ENVS)]
     env = VecMonitor(SubprocVecEnv(env_fns))  # records episode reward/length for tensorboard, obs/rewards pass through unchanged
-    policy_kwargs = dict(features_extractor_class=Agent)
+    policy_kwargs = dict(features_extractor_class=Agent, net_arch=[64, 64])     # network size 64x64
 
     load_existing = False
 
@@ -148,7 +148,7 @@ def main():
             learning_rate=5e-5,
             buffer_size=900_000,
             batch_size=256,
-            gamma=0.997,
+            gamma=0.995,
             tau=0.01,
             train_freq=4,
             gradient_steps=4,
@@ -160,7 +160,7 @@ def main():
         )
 
     max_steps = 10_000_000
-    checkpoint_steps = 2_000_000 // NUM_ENVS  # save the model every n steps, adjusted for number of parallel envs
+    checkpoint_steps = 1_000_000 // NUM_ENVS  # save the model every n steps, adjusted for number of parallel envs
     stats_steps = 5_000_000 // NUM_ENVS  # save episode stats every n steps (each file holds all episodes so far)
 
     stats_callback = EpisodeStatsCallback(

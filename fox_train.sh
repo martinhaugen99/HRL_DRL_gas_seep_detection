@@ -30,6 +30,6 @@ RUN="${TAG}_${SLURM_ARRAY_JOB_ID}"
 
 case "$SLURM_ARRAY_TASK_ID" in
     0) $PY -m HUGIN_gym.training.train_DDQN --name "DQN_$RUN" ;;
-    1) $PY -m HUGIN_gym.training.train_PPO --paper --name "PPO_$RUN" ;;
+    1) $PY -m HUGIN_gym.training.train_PPO --compare --name "PPO_$RUN" ;;
     2) $PY -m HUGIN_gym.training.train_SAC --name "SAC_$RUN" ;;
 esac

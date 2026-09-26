@@ -14,7 +14,7 @@ from HUGIN_gym.envs.wrappers.FilterObservationWrapper import FilterObservationWr
 from HUGIN_gym.callbacks.EpisodeStatsCallback import EpisodeStatsCallback
 from HUGIN_gym.utils.build_train_config import build_training_config_ppo
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
-from HUGIN_gym.training.train_PPO_config import FULL_CONFIG, PAPER_CONFIG, SMOKE_CONFIG
+from HUGIN_gym.training.train_PPO_config import FULL_CONFIG, PAPER_CONFIG, SMOKE_CONFIG, COMPARE_CONFIG
 
 
 def main():
@@ -31,6 +31,8 @@ def main():
         config = SMOKE_CONFIG
     elif args.paper:
         config = PAPER_CONFIG
+    elif args.compare:
+        config = COMPARE_CONFIG
     else:
         config = FULL_CONFIG
 
@@ -147,7 +149,7 @@ def main():
     env_fns = [make_env() for _ in range(NUM_ENVS)]
     env = VecMonitor(SubprocVecEnv(env_fns))  # records episode reward/length for tensorboard, obs/rewards pass through unchanged
 
-    policy_kwargs = dict(features_extractor_class=Agent)
+    policy_kwargs = dict(features_extractor_class=Agent, net_arch=[dict(pi=[64, 64], vf=[64, 64])])    # network size 64x64
 
     load_existing = False  # switch to True if you want to resume
 
@@ -164,7 +166,7 @@ def main():
             n_steps=config["n_steps"],   # per env; effective batch size = n_steps * NUM_ENVS
             batch_size=config["batch_size"],
             n_epochs=config["n_epochs"],
-            gamma=0.9975,                # keep your discount for comparability
+            gamma=0.995,                # keep your discount for comparability
             gae_lambda=0.95,
             clip_range=0.2,
             ent_coef=0.01,

@@ -96,7 +96,7 @@ def main():
 
     env_fns = [make_env() for _ in range(NUM_ENVS)]
     env = VecMonitor(SubprocVecEnv(env_fns)) # records episode reward/length for tensorboard, obs/rewards pass through unchanged
-    policy_kwargs = dict(features_extractor_class=Agent)
+    policy_kwargs = dict(features_extractor_class=Agent, net_arch=[64, 64])     # network size 64x64
     
     load_existing = False  # switch to False to train from scratch
 
@@ -111,7 +111,7 @@ def main():
             buffer_size=800_000, #800_000, #800k
             learning_starts=400_000,#10k
             batch_size=128,
-            gamma=0.9945,# 0.997, # ~N=100 => g=0.99, now 41x41 -> N=440 => g= 0.9977
+            gamma=0.995,# 0.997, # ~N=100 => g=0.99, now 41x41 -> N=440 => g= 0.9977
             target_update_interval=50_000,
             train_freq=4,
             gradient_steps=4,
@@ -126,8 +126,8 @@ def main():
     # INIT (insert here)
     # custom_callback = CustomWandbCallback()  # For your mean_q logging
 
-    max_steps =  30_000_000
-    checkpoint_steps = 2_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
+    max_steps =  10_000_000
+    checkpoint_steps = 1_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
     stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
     # --- get max_return safely before SubprocVecEnv ---
 
