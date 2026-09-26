@@ -25,6 +25,7 @@ def main():
     preset_group.add_argument("--smoke", action="store_true")
     preset_group.add_argument("--paper", action="store_true")
     preset_group.add_argument("--full", action="store_true")
+    preset_group.add_argument("--compare", action="store_true")
     parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: the preset's name)")
     args = parser.parse_args()
     if args.smoke:
@@ -149,7 +150,7 @@ def main():
     env_fns = [make_env() for _ in range(NUM_ENVS)]
     env = VecMonitor(SubprocVecEnv(env_fns))  # records episode reward/length for tensorboard, obs/rewards pass through unchanged
 
-    policy_kwargs = dict(features_extractor_class=Agent, net_arch=[dict(pi=[64, 64], vf=[64, 64])])    # network size 64x64
+    policy_kwargs = dict(features_extractor_class=Agent, net_arch=dict(pi=[64, 64], vf=[64, 64]))    # network size 64x64
 
     load_existing = False  # switch to True if you want to resume
 
