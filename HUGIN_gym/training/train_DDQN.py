@@ -115,7 +115,7 @@ def main():
             target_update_interval=50_000,
             train_freq=4,
             gradient_steps=4,
-            exploration_fraction=0.8,
+            exploration_fraction=0.2,
             exploration_final_eps=0.05,  #0 .1
             verbose=0,
             policy_kwargs=policy_kwargs, # CNN as feature extractor!!
