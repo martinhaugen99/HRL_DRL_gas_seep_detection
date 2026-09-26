@@ -75,6 +75,9 @@ def main():
             else:
                 env.use_c_map = True
             env.agent_type = AGENT_TYPE
+            if AGENT_TYPE == "PLUME": # start near the plume and vary its size (range and margin are set in HUGIN_env.py)
+                env.spawn_near_plume = True
+                env.vary_plume_size = True
             env = DynamicEpisodeLengthWrapper(env, schedule_fn=episode_length_schedule) # spaceholder for use of a Dynamic Episode Length
              # Filtering the Obs space dependant on the agent
             if GP:

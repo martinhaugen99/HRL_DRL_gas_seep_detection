@@ -112,6 +112,12 @@ class HUGIN(gym.Env):
         self.gaussian_sigma = 3.5   # spread of the Gaussian blob
         self.gaussian_amplitude = 1.0  # peak concentration
         self.c_threshold = 0.3 # threshold for over threshold map, can be adapted
+        #variable plume
+        self.vary_plume_size = False      # new random plume size every episode (switched on by the PLUME training/test scripts)
+        self.gaussian_sigma_range = [2.0, 5.0]  # sigma range used when vary_plume_size is on: plumes 5-15 cells wide
+        self.spawn_near_plume = False     # start in a box around the plume instead of anywhere on the map (switched on by the PLUME training/test scripts)
+        self.spawn_margin = 3             # cells added around the plume's bounding box
+
         self.c_around_width = 0.15
         self.get_concentration = self.concentration_function
         self.reward_fn_1explore = Reward1_explore() # Note, concentration GP model must be in one of the reward functions
@@ -253,7 +259,8 @@ class HUGIN(gym.Env):
     # -- Define the concentration function -- #   
     def concentration_function(self, x, y, z):
             centers = np.array(self.gaussian_centers)  # (N, 3)
-            sigma = self.gaussian_sigma
+            #sigma = self.gaussian_sigma
+            sigma = np.reshape(self.gaussian_sigma, (-1, 1, 1, 1))  # one sigma per source; a plain number still works
             A = self.gaussian_amplitude
 
             # reshape centers for broadcasting
@@ -462,6 +469,25 @@ class HUGIN(gym.Env):
 
         return ix, iy, iz
 
+    def _spawn_near_plume(self):
+        """
+        Start inside the bounding box of the above-threshold cells, grown by spawn_margin cells,
+        so the plume agent begins near a plume like after a hand-over from the exploration agent.
+        Uses the true plume map (also in GP mode); the agent never observes it.
+        """
+        xs, ys, _ = np.nonzero(self.GT_c_over_threshold_maps)
+        if len(xs) == 0:
+            return # no cell above threshold: keep the random start
+        lim_x = int(self.domain_limit["x"] - 1) # same start limits as the random start in reset()
+        lim_y = int(self.domain_limit["y"] - 1)
+        # map indices -> positions (cell_size = 1)
+        x_lo = max(xs.min() - self.offset[0] - self.spawn_margin, -lim_x)
+        x_hi = min(xs.max() - self.offset[0] + self.spawn_margin, lim_x)
+        y_lo = max(ys.min() - self.offset[1] - self.spawn_margin, -lim_y)
+        y_hi = min(ys.max() - self.offset[1] + self.spawn_margin, lim_y)
+        self.state["x"] = np.random.randint(x_lo, x_hi + 1)
+        self.state["y"] = np.random.randint(y_lo, y_hi + 1)
+
    
     def reset(self, *, seed=None, options=None,goal_distance=None):
         super().reset(seed=seed)
@@ -507,6 +533,9 @@ class HUGIN(gym.Env):
             low=-np.array([self.domain_limit["x"]-2, self.domain_limit["y"]-2, self.domain_limit["z"]-z_3D_up_to_2]),
             high=np.array([self.domain_limit["x"]-2, self.domain_limit["y"]-2, self.domain_limit["z"]-z_3D_up_to_2]),
             size=(self.N_gaussians, 3))
+            # random plume size
+            if self.vary_plume_size:
+                self.gaussian_sigma = np.random.uniform(*self.gaussian_sigma_range, size=self.N_gaussians)
             # random start orientation
             #self.state["theta"] = np.random.uniform(-np.pi, np.pi)
 
@@ -527,6 +556,9 @@ class HUGIN(gym.Env):
         mask_around = (self.conc <= self.c_threshold + self.c_around_width) & (self.conc >= self.c_threshold - self.c_around_width)
 
         self.GT_c_around_threshold_maps = np.where(mask_around, 1, 0).astype(bool)
+        
+        if self.spawn_near_plume and (self.train or self.random_points):
+            self._spawn_near_plume() # needs the plume maps above, and must run before anything below reads the start position
         
         if self._3D:
             self.maxN_over_thresh=(np.sum(self.GT_c_over_threshold_maps)+8).astype(np.float32) # careful! only in z plane

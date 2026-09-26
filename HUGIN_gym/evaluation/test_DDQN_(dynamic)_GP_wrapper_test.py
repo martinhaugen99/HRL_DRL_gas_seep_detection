@@ -27,6 +27,9 @@ def make_test_env(GP=True,AGENT_TYPE="PLUME", VIS_GP=True, VISUALISE = True,kern
     )
     base_env = base_env.unwrapped
     base_env.agent_type = AGENT_TYPE
+    if AGENT_TYPE == "PLUME": # same start and plume sizes as in the PLUME training
+        base_env.spawn_near_plume = True
+        base_env.vary_plume_size = True
     base_env.train = False
     base_env.random_points = True
     base_env.multiple_gaussians = [1,1] # testing 2 instead of 1 source at the same time
