@@ -36,7 +36,7 @@ COMPARE_CONFIG = {
     "max_episode_length": 230,
     "num_envs": 12,
     "gp": True,
-    "name": "",
+    "name": "PPO_compare",
     "n_steps": 2048,
     "batch_size": 1024,
     "n_epochs": 4,
