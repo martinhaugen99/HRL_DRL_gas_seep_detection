@@ -15,17 +15,20 @@ from HUGIN_gym.utils.build_train_config import build_training_config
 from HUGIN_gym.evaluation.rollout import run_episode, manual_rollout
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
 from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
+from HUGIN_gym.training.train_DDQN_config import FULL_CONFIG, SMOKE_CONFIG
 
 
 def main():
     torch.set_num_threads(1) # the network is tiny: extra torch threads only compete with the env workers for CPU
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: NAME below)")
+    parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: the preset's name)")
     args = parser.parse_args()
+    config = SMOKE_CONFIG if args.smoke else FULL_CONFIG
 
-    MAX_EPS_LEN = 230
-    NUM_ENVS = 12
-    GP =True
+    MAX_EPS_LEN = config["max_episode_length"]
+    NUM_ENVS = config["num_envs"]
+    GP = config["gp"]
     ACCURACY_GOALS = [0.9,1.0,1.0]
     SUB_AGENT_TRAIN_ON_GP = True
     AGENT_TYPE = "PLUME"
@@ -47,7 +50,7 @@ def main():
         #     keys_you_want_to_keep.append("c_over_threshold_maps")
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
                 
-    NAME = args.name or "NEW_plume_GP_clipped_RWD_min_steps_in_plume"
+    NAME = args.name or config["name"]
    
 
     saving_location = f"../trained-agents/{NAME}"
@@ -104,16 +107,16 @@ def main():
         model = DQN(
             "MultiInputPolicy", # MultiInputPolicy for a dict observation space and MlpPolicy for a flat observation space
             env,
-            learning_rate=1e-4,
-            buffer_size=800_000, #800_000, #800k
-            learning_starts=400_000,#10k
-            batch_size=128,
-            gamma=0.9945,# 0.997, # ~N=100 => g=0.99, now 41x41 -> N=440 => g= 0.9977
-            target_update_interval=50_000,
-            train_freq=4,
-            gradient_steps=4,
-            exploration_fraction=0.8,
-            exploration_final_eps=0.05,  #0 .1
+            learning_rate=config["learning_rate"],
+            buffer_size=config["buffer_size"],
+            learning_starts=config["learning_starts"],
+            batch_size=config["batch_size"],
+            gamma=config["gamma"], # ~N=100 => g=0.99, now 41x41 -> N=440 => g= 0.9977
+            target_update_interval=config["target_update_interval"],
+            train_freq=config["train_freq"],
+            gradient_steps=config["gradient_steps"],
+            exploration_fraction=config["exploration_fraction"],
+            exploration_final_eps=config["exploration_final_eps"],
             verbose=0,
             policy_kwargs=policy_kwargs, # CNN as feature extractor!!
             tensorboard_log=f"{saving_location}/tensorboard", # live curves: tensorboard --logdir ../trained-agents
@@ -123,9 +126,9 @@ def main():
     # INIT (insert here)
     # custom_callback = CustomWandbCallback()  # For your mean_q logging
 
-    max_steps =  30_000_000
-    checkpoint_steps = 2_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
-    stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
+    max_steps = config["max_steps"]
+    checkpoint_steps = config["checkpoint_steps"] // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
+    stats_steps = config["stats_steps"] // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
     # --- get max_return safely before SubprocVecEnv ---
 
     stats_callback = EpisodeStatsCallback(max_episode_length=MAX_EPS_LEN,save_freq=stats_steps, NUM_ENVS=NUM_ENVS,address=f"{saving_location}/episode_stats",N_states=N_STATES,GP=GP) # save every n steps, max episode length for _on_step being called only at the end of every episode
