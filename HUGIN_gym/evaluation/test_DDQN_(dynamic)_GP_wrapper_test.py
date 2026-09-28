@@ -68,7 +68,7 @@ def make_test_env(GP=True,AGENT_TYPE="PLUME", VIS_GP=True, VISUALISE = True,kern
 ###### test modes
 
 
-model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/DQN_gp_230steps_4218364/DQN_scratch.zip"#/space_diff_NEW_visited
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/DQN_compare_4223553/DQN_scratch.zip"#/space_diff_NEW_visited
 
 def test_agent():
     VISUALISE = True      # Meshcat / real-world simulator

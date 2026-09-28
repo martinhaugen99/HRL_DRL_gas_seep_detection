@@ -88,7 +88,7 @@ def make_test_env(
 
 # Path to your PPO trained agent directory (where PPO_scratch is saved)
 #model_path_global = "../trained-agents/PPO_border_GP_d_to_max_only_terminate_after_plume/PPO_scratch"
-model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/PPO_gp_230steps_4218364/PPO_scratch.zip"
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/PPO_compare_4223553/PPO_scratch.zip"
 
 def test_agent():
     VISUALISE = True  # Meshcat / real-world simulator

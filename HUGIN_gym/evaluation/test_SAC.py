@@ -129,7 +129,7 @@ def make_test_env(
 ###### test modes
 
 # Path to your SAC trained agent file (model.save(...))
-model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/SAC_gp_230steps_4218364/SAC_scratch.zip"
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/SAC_compare_4223553/SAC_scratch.zip"
 
 
 def test_agent():
