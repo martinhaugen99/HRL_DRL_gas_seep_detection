@@ -54,7 +54,7 @@ class HUGIN(gym.Env):
             else:
                 self._3D=False
         # -- bit map for visited places --
-    
+
         self.cell_size = 1.0  # meters per cell (choose based on required resolution)
         # map sizes (integers)
         self.map_size_x = int(2*int(np.ceil(self.domain_limit["x"] / self.cell_size))) + 1
@@ -86,28 +86,9 @@ class HUGIN(gym.Env):
         low=-np.array([self.domain_limit["x"]-2, self.domain_limit["y"]-2, self.domain_limit["z"]-z_3D_up_to_2]),
         high=np.array([self.domain_limit["x"]-2, self.domain_limit["y"]-2, self.domain_limit["z"]-z_3D_up_to_2]),
         size=(self.N_gaussians, 3))
-        #TODO: ADD SPECIFIED START FOR MY AGENT
-        # if self.spawn_close_to_source:
-        # def _sample_position_close_to_source(self,max_tries=1000, margin_x=2, margin_y = 2, margin_z=2):
-        #     for _ in range(max_tries):
-        #         x =np.random.randint(-6,6)
-        #         y_max = int(np.sqrt(6**2-np.abs(x)**2))
-        #         y = np.random.randint(-y_max,y_max)
 
-        #         if self._3D:
-        #             z_max = int(np.sqrt(6**2-np.abs(x)**2-np.abs(y)**2))
-        #             z = np.random.randint(-z_max,z_max)
-        #         else : 
-        #             z = 0
-        #         if x**2+y**2+z**2<4.0**2
-        #         if (
-        #             abs(x) <= self.domain_limit["x"] - margin_x and
-        #             abs(y) <= self.domain_limit["y"] - margin_y and
-        #             abs(z) <= self.domain_limit["z"] - margin_z
-        #         ):
-        #             return np.array([x, y, z], dtype=float)
-        #     6.0**2 > (x**2+y**2+z**2) >= 4.0**
-        #self.state["x"],self.state["y"],self.state["z"]=self._sample_position_close_to_source()
+
+        self.spawn_close_to_source = False
 
         # (x0, y0, z0)
         self.gaussian_sigma = 3.5   # spread of the Gaussian blob
@@ -463,7 +444,29 @@ class HUGIN(gym.Env):
 
         return ix, iy, iz
 
-   
+
+    def _sample_position_close_to_source(self, r_min=4, r_max=6, max_tries=1000, margin_x=2, margin_y = 2, margin_z=2):
+            cx, cy, cz = np.round(self.gaussian_centers[0])
+            R = int(r_max)
+    
+            for _ in range(max_tries):
+                dx =np.random.randint(-R,R+1)
+                dy = np.random.randint(-R, R+1)
+                dz = np.random.randint(-R, R+1) if self._3D else 0
+    
+                #keep checking if we are not inside perimiter
+                if not (r_min ** 2 <= dx**2 + dy**2 + dz**2 < r_max ** 2):
+                    continue
+                x, y, z = cx + dx, cy + dy, cz + dz
+    
+                if (
+                    abs(x) <= self.domain_limit["x"] - margin_x and
+                    abs(y) <= self.domain_limit["y"] - margin_y and
+                    (not self._3D or abs(z) <= self.domain_limit["z"] - margin_z)):
+                    return x, y, z
+            return cx, cy, cz
+
+    
     def reset(self, *, seed=None, options=None,goal_distance=None):
         super().reset(seed=seed)
 
@@ -484,8 +487,6 @@ class HUGIN(gym.Env):
             "c_over_threshold_map": np.zeros((self.map_size_x,self.map_size_y,self.map_size_z,1), dtype = bool),
             "c_around_threshold_map": np.zeros((self.map_size_x,self.map_size_y,self.map_size_z,1), dtype = bool),
         }
-       
-        
         
         if self.train==True or self.random_points==True:
             """
@@ -518,6 +519,9 @@ class HUGIN(gym.Env):
                 1.0*np.pi,
                 1.5*np.pi
             ])
+
+            if self.spawn_close_to_source:
+                        self.state["x"],self.state["y"],self.state["z"]=self._sample_position_close_to_source()
 
         self.conc = self.get_concentration(self.x, self.y, self.z)
         self._set_corner_cells_visited()

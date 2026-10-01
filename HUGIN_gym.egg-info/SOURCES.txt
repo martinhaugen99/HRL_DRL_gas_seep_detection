@@ -49,6 +49,7 @@ HUGIN_gym/overlay/__init__.py
 HUGIN_gym/overlay/overlay_server.py
 HUGIN_gym/training/__init__.py
 HUGIN_gym/training/train_DDQN.py
+HUGIN_gym/training/train_DDQN_config.py
 HUGIN_gym/training/train_HRL(ddqn).py
 HUGIN_gym/training/train_HRL(ppo).py
 HUGIN_gym/training/train_PPO.py

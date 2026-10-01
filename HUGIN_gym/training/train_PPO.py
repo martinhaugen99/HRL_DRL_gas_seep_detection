@@ -52,10 +52,11 @@ def main():
             #"GT_c_around_threshold_maps_downsampled",
             "local_GT_around",
             "border_coverage",
-            #"space_coverage",
+            "space_coverage",
             "distance_from_max",
         ]
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent3_border.py"
+        SPAWN_CLOSE_TO_SOURCE = True 
 
     elif AGENT_TYPE == "SPACE":
         from HUGIN_gym.agents.feature_extractor.agent1_space_explore import (
@@ -68,6 +69,7 @@ def main():
             #"VAR_visited_downsampled"
         ]
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent1_exploration.py"
+        SPAWN_CLOSE_TO_SOURCE = False
 
     elif AGENT_TYPE == "PLUME":
         from HUGIN_gym.agents.feature_extractor.agent2_plume_explore import (
@@ -83,6 +85,7 @@ def main():
             "distance_from_max",
         ]
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
+        SPAWN_CLOSE_TO_SOURCE = True
 
     NAME = args.name or config["name"]
     saving_location = f"../trained-agents/{NAME}"
@@ -107,7 +110,7 @@ def main():
             env.accuracy_agent_goals = ACCURACY_GOALS
             env.GP_ON = GP
             env.multiple_gaussians = [1,1]
-            #env.spawn_close_to_source = True # # !!!!!!!!!!!!!!!!!!'#####!!!!!!!!!!!!!!!!!!!
+            env.spawn_close_to_source = SPAWN_CLOSE_TO_SOURCE
             if AGENT_TYPE == "SPACE":
                 env.use_c_map = False
             else:

@@ -31,7 +31,7 @@ def main():
     GP = config["gp"]
     ACCURACY_GOALS = [0.9,1.0,1.0]
     SUB_AGENT_TRAIN_ON_GP = True
-    AGENT_TYPE = "PLUME"
+    AGENT_TYPE = "BORDER"
 
     if AGENT_TYPE == "BORDER":
         from HUGIN_gym.agents.feature_extractor.agent3_border_explore import AgentBoarderExplore as Agent
@@ -39,16 +39,21 @@ def main():
         # if SUB_AGENT_TRAIN_ON_GP:
         #     keys_you_want_to_keep.append("c_around_threshold_maps")
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent3_border.py"
+        SPAWN_CLOSE_TO_SOURCE = True
+
     elif AGENT_TYPE == "SPACE":
         from HUGIN_gym.agents.feature_extractor.agent1_space_explore import AgentSpaceExplore as Agent
         keys_you_want_to_keep = ["obs_state", "visited_maps_downsampled","space_coverage"]
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent1_exploration.py"
+        SPAWN_CLOSE_TO_SOURCE = False
+
     elif AGENT_TYPE == "PLUME":
         from HUGIN_gym.agents.feature_extractor.agent2_plume_explore import AgentPlumeExplore as Agent
         keys_you_want_to_keep = ["obs_state", "visited_maps_downsampled", "GT_c_over_threshold_maps_downsampled","local_GT","plume_coverage","space_coverage","distance_from_max"]
         # if SUB_AGENT_TRAIN_ON_GP:
         #     keys_you_want_to_keep.append("c_over_threshold_maps")
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
+        SPAWN_CLOSE_TO_SOURCE = True
                 
     NAME = args.name or config["name"]
    
@@ -72,6 +77,7 @@ def main():
             env = env.unwrapped  # REMOVE default TimeLimit wrapper
             env.train = True
             env.accuracy_agent_goals = ACCURACY_GOALS
+            env.spawn_close_to_source = SPAWN_CLOSE_TO_SOURCE
             env.GP_ON=GP
             if AGENT_TYPE == "SPACE":
                 env.use_c_map = False ## for spatial explorer
