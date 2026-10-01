@@ -86,6 +86,7 @@ class HUGIN(gym.Env):
         low=-np.array([self.domain_limit["x"]-2, self.domain_limit["y"]-2, self.domain_limit["z"]-z_3D_up_to_2]),
         high=np.array([self.domain_limit["x"]-2, self.domain_limit["y"]-2, self.domain_limit["z"]-z_3D_up_to_2]),
         size=(self.N_gaussians, 3))
+        #TODO: ADD SPECIFIED START FOR MY AGENT
         # if self.spawn_close_to_source:
         # def _sample_position_close_to_source(self,max_tries=1000, margin_x=2, margin_y = 2, margin_z=2):
         #     for _ in range(max_tries):
@@ -527,7 +528,8 @@ class HUGIN(gym.Env):
         mask_around = (self.conc <= self.c_threshold + self.c_around_width) & (self.conc >= self.c_threshold - self.c_around_width)
 
         self.GT_c_around_threshold_maps = np.where(mask_around, 1, 0).astype(bool)
-        
+
+
         if self._3D:
             self.maxN_over_thresh=(np.sum(self.GT_c_over_threshold_maps)+8).astype(np.float32) # careful! only in z plane
         else:

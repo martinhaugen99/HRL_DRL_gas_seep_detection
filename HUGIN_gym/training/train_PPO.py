@@ -34,6 +34,7 @@ def main():
     else:
         config = FULL_CONFIG
 
+    #test parameters
     MAX_EPS_LEN = config["max_episode_length"]
     NUM_ENVS = config["num_envs"]
     GP = config["gp"]
