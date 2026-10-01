@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(grep -v -E '\\\\.\\(png|jpg|pdf|zip|npy|pt\\)$')"
-    ]
-  }
-}
