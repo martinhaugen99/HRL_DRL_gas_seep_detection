@@ -14,7 +14,7 @@ from HUGIN_gym.envs.wrappers.FilterObservationWrapper import FilterObservationWr
 from HUGIN_gym.callbacks.EpisodeStatsCallback import EpisodeStatsCallback
 from HUGIN_gym.utils.build_train_config import build_training_config_ppo
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
-from HUGIN_gym.training.train_PPO_config import FULL_CONFIG, PAPER_CONFIG, SMOKE_CONFIG
+from HUGIN_gym.training.train_PPO_config import FULL_CONFIG, GP_2D_CONFIG, PAPER_CONFIG, SMOKE_CONFIG
 
 
 def main():
@@ -31,8 +31,10 @@ def main():
         config = SMOKE_CONFIG
     elif args.paper:
         config = PAPER_CONFIG
-    else:
+    elif args.full:
         config = FULL_CONFIG
+    else:
+        config = GP_2D_CONFIG  # default: GP on, paper-length episodes
 
     #test parameters
     MAX_EPS_LEN = config["max_episode_length"]

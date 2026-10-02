@@ -18,6 +18,11 @@ FULL_CONFIG = {
     "stats_steps": 5_000_000,
 }
 
+GP_2D_CONFIG = {
+    **FULL_CONFIG,
+    "name": "2D_DDQN_border_GP_30M",
+}
+
 SMOKE_CONFIG = {
     **FULL_CONFIG,
     "max_episode_length": 256,

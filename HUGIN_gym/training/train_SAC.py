@@ -13,20 +13,30 @@ from HUGIN_gym.envs.wrappers.FilterObservationWrapper import FilterObservationWr
 from HUGIN_gym.callbacks.EpisodeStatsCallback import EpisodeStatsCallback
 from HUGIN_gym.utils.build_train_config import build_training_config_sac  # or define a SAC-specific variant
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
-from HUGIN_gym.envs.wrappers.continuous_wrapper import ContinuousToDiscreteActionWrapper  
+from HUGIN_gym.envs.wrappers.continuous_wrapper import ContinuousToDiscreteActionWrapper
+from HUGIN_gym.training.train_SAC_config import FULL_CONFIG, GP_2D_CONFIG, SMOKE_CONFIG
 
 
 def main():
     torch.set_num_threads(1)  # the network is tiny: extra torch threads only compete with the env workers for CPU
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: NAME below)")
+    preset_group = parser.add_mutually_exclusive_group()
+    preset_group.add_argument("--smoke", action="store_true")
+    preset_group.add_argument("--full", action="store_true")
+    parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: the preset's name)")
     args = parser.parse_args()
+    if args.smoke:
+        config = SMOKE_CONFIG
+    elif args.full:
+        config = FULL_CONFIG
+    else:
+        config = GP_2D_CONFIG  # default: GP on
 
-    MAX_EPS_LEN = 460
-    NUM_ENVS = 12
-    GP = False
+    MAX_EPS_LEN = config["max_episode_length"]
+    NUM_ENVS = config["num_envs"]
+    GP = config["gp"]
     ACCURACY_GOALS = [0.9, 1.0, 1.0]
-    SUB_AGENT_TRAIN_ON_GP = False
+    SUB_AGENT_TRAIN_ON_GP = True
     AGENT_TYPE = "BORDER"
 
     if AGENT_TYPE == "BORDER":
@@ -73,7 +83,7 @@ def main():
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
         SPAWN_CLOSE_TO_SOURCE = True
 
-    NAME = args.name or "SAC_space_GT_not_clipped_RWD"
+    NAME = args.name or config["name"]
 
     saving_location = f"../trained-agents/{NAME}"
     loading_location = "../trained-agents/..._what_so_ever_..."
@@ -146,13 +156,13 @@ def main():
         model = SAC(
             "MultiInputPolicy",
             env,
-            learning_rate=5e-5,
-            buffer_size=900_000,
-            batch_size=256,
-            gamma=0.997,
-            tau=0.01,
-            train_freq=4,
-            gradient_steps=4,
+            learning_rate=config["learning_rate"],
+            buffer_size=config["buffer_size"],
+            batch_size=config["batch_size"],
+            gamma=config["gamma"],
+            tau=config["tau"],
+            train_freq=config["train_freq"],
+            gradient_steps=config["gradient_steps"],
             ent_coef="auto",
             target_update_interval=1,
             verbose=0,
@@ -160,9 +170,9 @@ def main():
             tensorboard_log=f"{saving_location}/tensorboard",  # live curves: tensorboard --logdir ../trained-agents
         )
 
-    max_steps = 10_000_000
-    checkpoint_steps = 2_000_000 // NUM_ENVS  # save the model every n steps, adjusted for number of parallel envs
-    stats_steps = 5_000_000 // NUM_ENVS  # save episode stats every n steps (each file holds all episodes so far)
+    max_steps = config["max_steps"]
+    checkpoint_steps = config["checkpoint_steps"] // NUM_ENVS  # save the model every n steps, adjusted for number of parallel envs
+    stats_steps = config["stats_steps"] // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
 
     stats_callback = EpisodeStatsCallback(
         max_episode_length=MAX_EPS_LEN,

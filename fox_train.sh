@@ -4,9 +4,9 @@
 # Only one algorithm, e.g. PPO:      sbatch --array=1 fox_train.sh <tag>
 # Runs are saved as ../trained-agents/{DQN,PPO,SAC}_<tag>_<job id>; the job id makes every submission unique.
 #SBATCH --account=ec12              # <-- your Educloud project
-#SBATCH --job-name=hugin-plume
+#SBATCH --job-name=hugin-border
 #SBATCH --partition=normal
-#SBATCH --array=0-2                  # 0 = DQN, 1 = PPO (--paper), 2 = SAC
+#SBATCH --array=0-2                  # 0 = DQN, 1 = PPO, 2 = SAC
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16           # 12 env workers + the main process, with headroom
 #SBATCH --mem-per-cpu=2G             # 32 GiB per run; a DQN run is estimated to peak around 9 GiB
@@ -25,11 +25,11 @@ export MPLBACKEND=Agg                      # compute nodes have no display
 
 cd "$SLURM_SUBMIT_DIR"                     # runs write to ../trained-agents/<run name>
 PY=.venv/bin/python
-TAG=${1:-plume}                            # first argument after the script name in sbatch
+TAG=${1:-border}                            # first argument after the script name in sbatch
 RUN="${TAG}_${SLURM_ARRAY_JOB_ID}"
 
 case "$SLURM_ARRAY_TASK_ID" in
     0) $PY -m HUGIN_gym.training.train_DDQN --name "DQN_$RUN" ;;
-    1) $PY -m HUGIN_gym.training.train_PPO --paper --name "PPO_$RUN" ;;
+    1) $PY -m HUGIN_gym.training.train_PPO --name "PPO_$RUN" ;;
     2) $PY -m HUGIN_gym.training.train_SAC --name "SAC_$RUN" ;;
 esac

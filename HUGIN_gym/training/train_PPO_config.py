@@ -20,6 +20,12 @@ PAPER_CONFIG = {
     "checkpoint_steps": 1_000_000,
 }
 
+GP_2D_CONFIG = {
+    **PAPER_CONFIG,
+    "gp": True,
+    "name": "2D_PPO_border_GP_10M",
+}
+
 SMOKE_CONFIG = {
     "max_episode_length": 256,
     "num_envs": 1,

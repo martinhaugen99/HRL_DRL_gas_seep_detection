@@ -15,16 +15,23 @@ from HUGIN_gym.utils.build_train_config import build_training_config
 from HUGIN_gym.evaluation.rollout import run_episode, manual_rollout
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
 from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
-from HUGIN_gym.training.train_DDQN_config import FULL_CONFIG, SMOKE_CONFIG
+from HUGIN_gym.training.train_DDQN_config import FULL_CONFIG, GP_2D_CONFIG, SMOKE_CONFIG
 
 
 def main():
     torch.set_num_threads(1) # the network is tiny: extra torch threads only compete with the env workers for CPU
     parser = argparse.ArgumentParser()
-    parser.add_argument("--smoke", action="store_true")
+    preset_group = parser.add_mutually_exclusive_group()
+    preset_group.add_argument("--smoke", action="store_true")
+    preset_group.add_argument("--full", action="store_true")
     parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: the preset's name)")
     args = parser.parse_args()
-    config = SMOKE_CONFIG if args.smoke else FULL_CONFIG
+    if args.smoke:
+        config = SMOKE_CONFIG
+    elif args.full:
+        config = FULL_CONFIG
+    else:
+        config = GP_2D_CONFIG  # default: GP on
 
     MAX_EPS_LEN = config["max_episode_length"]
     NUM_ENVS = config["num_envs"]
