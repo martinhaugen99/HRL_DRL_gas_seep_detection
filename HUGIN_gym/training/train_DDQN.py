@@ -23,8 +23,8 @@ def main():
     parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: NAME below)")
     args = parser.parse_args()
 
-    MAX_EPS_LEN = 230
-    NUM_ENVS = 12
+    MAX_EPS_LEN = 460
+    NUM_ENVS = 24
     GP =True
     ACCURACY_GOALS = [0.9,1.0,1.0]
     SUB_AGENT_TRAIN_ON_GP = True
@@ -96,7 +96,7 @@ def main():
 
     env_fns = [make_env() for _ in range(NUM_ENVS)]
     env = VecMonitor(SubprocVecEnv(env_fns)) # records episode reward/length for tensorboard, obs/rewards pass through unchanged
-    policy_kwargs = dict(features_extractor_class=Agent, net_arch=[64, 64])     # network size 64x64
+    policy_kwargs = dict(features_extractor_class=Agent, net_arch=[128, 128])     # network size 64x64
     
     load_existing = False  # switch to False to train from scratch
 
@@ -126,8 +126,8 @@ def main():
     # INIT (insert here)
     # custom_callback = CustomWandbCallback()  # For your mean_q logging
 
-    max_steps =  10_000_000
-    checkpoint_steps = 1_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
+    max_steps =  100_000_000
+    checkpoint_steps = 10_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
     stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
     # --- get max_return safely before SubprocVecEnv ---
 

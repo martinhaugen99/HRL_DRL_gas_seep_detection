@@ -33,13 +33,13 @@ SMOKE_CONFIG = {
 }
 
 COMPARE_CONFIG = {
-    "max_episode_length": 230,
-    "num_envs": 12,
+    "max_episode_length": 460,
+    "num_envs": 24,
     "gp": True,
     "name": "PPO_compare",
     "n_steps": 2048,
     "batch_size": 1024,
     "n_epochs": 4,
-    "max_steps": 10_000_000,
-    "checkpoint_steps": 1_000_000,
+    "max_steps": 100_000_000,
+    "checkpoint_steps": 10_000_000,
 }

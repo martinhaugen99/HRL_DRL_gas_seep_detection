@@ -150,7 +150,7 @@ def main():
     env_fns = [make_env() for _ in range(NUM_ENVS)]
     env = VecMonitor(SubprocVecEnv(env_fns))  # records episode reward/length for tensorboard, obs/rewards pass through unchanged
 
-    policy_kwargs = dict(features_extractor_class=Agent, net_arch=dict(pi=[64, 64], vf=[64, 64]))    # network size 64x64
+    policy_kwargs = dict(features_extractor_class=Agent, net_arch=dict(pi=[128, 128], vf=[128, 128]))    # network size 64x64
 
     load_existing = False  # switch to True if you want to resume
 
