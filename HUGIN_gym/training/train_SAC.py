@@ -161,7 +161,7 @@ def main():
 
     max_steps = 100_000_000
     checkpoint_steps = 10_000_000 // NUM_ENVS  # save the model every n steps, adjusted for number of parallel envs
-    stats_steps = 5_000_000 // NUM_ENVS  # save episode stats every n steps (each file holds all episodes so far)
+    stats_steps = 5_000_000 // NUM_ENVS  # save episode stats every n steps (each file holds all episodes so far, so only the newest is kept)
 
     stats_callback = EpisodeStatsCallback(
         max_episode_length=MAX_EPS_LEN,

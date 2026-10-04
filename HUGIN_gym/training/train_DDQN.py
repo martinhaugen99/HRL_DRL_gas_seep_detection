@@ -128,7 +128,7 @@ def main():
 
     max_steps =  100_000_000
     checkpoint_steps = 10_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
-    stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
+    stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far, so only the newest is kept)
     # --- get max_return safely before SubprocVecEnv ---
 
     stats_callback = EpisodeStatsCallback(max_episode_length=MAX_EPS_LEN,save_freq=stats_steps, NUM_ENVS=NUM_ENVS,address=f"{saving_location}/episode_stats",N_states=N_STATES,GP=GP) # save every n steps, max episode length for _on_step being called only at the end of every episode
