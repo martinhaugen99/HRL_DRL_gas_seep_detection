@@ -1,0 +1,44 @@
+{
+    "RUN_INFO": {
+        "timestamp": "2026-09-26 13:49:19",
+        "AGENT_TYPE": "PLUME",
+        "FEATURE_EXTRACTOR": "AgentPlumeExplore",
+        "filtered_obs_keys": [
+            "obs_state",
+            "local_GT",
+            "plume_coverage",
+            "space_coverage",
+            "distance_from_max"
+        ],
+        "TOTAL_TIMESTEPS": 10000000,
+        "NUM_ENVS": 12
+    },
+    "PPO_HYPERPARAMETERS": {
+        "learning_rate": 0.0003,
+        "n_steps": 2048,
+        "batch_size": 1024,
+        "n_epochs": 4,
+        "gamma": 0.995,
+        "gae_lambda": 0.95,
+        "clip_range": "FloatSchedule(ConstantSchedule(val=0.2))",
+        "ent_coef": 0.01,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5
+    },
+    "ENVIRONMENT": {
+        "max_episode_length": 230,
+        "checkpoint_steps": 83333
+    },
+    "POLICY": {
+        "architecture": "MultiInputActorCriticPolicy(\n  (features_extractor): AgentPlumeExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (pi_features_extractor): AgentPlumeExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (vf_features_extractor): AgentPlumeExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (mlp_extractor): MlpExtractor(\n    (policy_net): Sequential(\n      (0): Linear(in_features=128, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n    (value_net): Sequential(\n      (0): Linear(in_features=128, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n  )\n  (action_net): Linear(in_features=64, out_features=5, bias=True)\n  (value_net): Linear(in_features=64, out_features=1, bias=True)\n)"
+    },
+    "REWARD_FUNCTION_SOURCE": "    def get_reward(self,  agent_turns, c_over_threshold_normed, diff_cell_above, time_penalty = -0.7,SUBAGENT_TRAIN_ON_GP = False,diff_new_cells=None,found_source=None,percentage_visited=None,_3D=False, agent_rises=False):\n        \n\n        reward = 0\n        if SUBAGENT_TRAIN_ON_GP and (not found_source):\n                # reward += np.clip(diff_new_cells/4,0,1)\n                reward += diff_new_cells/6*0.7\n        #reward += np.clip(diff_cell_above/4,0,1)\n        reward += diff_cell_above/6\n        # if fill_above_threshold:\n        #     #reward += 0.2\n        #     if not current_position_IN_visited_locations:\n        #         reward=1.4+0.3*(1-c_over_threshold_normed)\n        #        \n            \n        # if current_above_threshold:\n        #     #reward += 0.2\n        #     if not current_position_IN_visited_locations:\n        #         reward=1.4+0.3*(1-c_over_threshold_normed)\n        #         reward = diff_cell_above\n        \n        # if distance_to_closest_concentration_cell<=1+1e-3:\n        #     reward += 0.3\n        # else:\n        #     reward += 0.3/distance_to_closest_concentration_cell\n\n\n        if agent_turns:\n            if percentage_visited:\n                if c_over_threshold_normed==1.0:\n                    reward-=0.3 * (1-percentage_visited)\n                else:   \n                    reward -= 0.3 * (1-c_over_threshold_normed)*(1-percentage_visited) # turning is bad unless it helps the progress\n            else:\n                if c_over_threshold_normed==1.0:\n                    reward-=0.3\n                else:\n                    reward -= 0.3 * (1-c_over_threshold_normed)\n\n        reward += time_penalty # *(1-c_over_threshold_normed) # later in episode lower pressure\n\n        # no velocity penalties as the HUGIN has to constantly move 2m/s forward\n\n        #[reward is between -1 and 1]\n        return reward\n",
+    "HRL_HYPERPARAMETERS": {
+        "kernel_config": {
+            "RBF": {
+                "type": "RBF",
+                "length_scale": 3.5
+            }
+        }
+    }
+}
