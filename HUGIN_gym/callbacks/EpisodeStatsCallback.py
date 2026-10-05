@@ -1,6 +1,7 @@
 from stable_baselines3.common.callbacks import BaseCallback
 import numpy as np
 import pickle
+import os
 
 class EpisodeStatsCallback(BaseCallback):
     def __init__(self, verbose=0, save_freq=20_000, max_episode_length=121, NUM_ENVS=1,address=None, N_states=0,GP=False):
@@ -16,6 +17,7 @@ class EpisodeStatsCallback(BaseCallback):
         self.max_episode_length = max_episode_length
         self.NUM_ENVS = NUM_ENVS
         self.address = address
+        self.last_stats_file = None # only the newest snapshot is kept, since each one holds all episodes so far
         #self.N_states=N_states
         self.episode_counter_above_threshold = []
         self.episode_counter_around_threshold = []
@@ -79,8 +81,13 @@ class EpisodeStatsCallback(BaseCallback):
         # Save periodically (callback calls, not raw timesteps)
         if self.n_calls % self.save_freq == 0:
             stats=self.get_stats()
-            with open(f"{self.address}_{self.n_calls*self.NUM_ENVS}.pkl", "wb") as f:
+            stats_file = f"{self.address}_{self.n_calls*self.NUM_ENVS}.pkl"
+            with open(stats_file, "wb") as f:
                 pickle.dump(stats, f)
+            # remove the previous snapshot only after the new one is written, so a crash always leaves one
+            if self.last_stats_file is not None and os.path.exists(self.last_stats_file):
+                os.remove(self.last_stats_file)
+            self.last_stats_file = stats_file
 
         return True
     

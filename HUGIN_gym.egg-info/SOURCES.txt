@@ -55,6 +55,7 @@ HUGIN_gym/training/train_HRL(ppo).py
 HUGIN_gym/training/train_PPO.py
 HUGIN_gym/training/train_PPO_config.py
 HUGIN_gym/training/train_SAC.py
+HUGIN_gym/training/train_SAC_config.py
 HUGIN_gym/utils/__init__.py
 HUGIN_gym/utils/build_train_config.py
 HUGIN_gym/utils/io.py
