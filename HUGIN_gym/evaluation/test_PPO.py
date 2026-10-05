@@ -44,6 +44,11 @@ def make_test_env(
     )
     base_env = base_env.unwrapped
     base_env.agent_type = AGENT_TYPE
+
+    #spawning close to plume for border and plume agents
+    if base_env.agent_type in ["PLUME", "BORDER"]:
+        base_env.spawn_close_to_source = True
+
     base_env.train = False
     base_env.random_points = True
     base_env.multiple_gaussians = [1,1]
@@ -85,10 +90,10 @@ def make_test_env(
 
 # Path to your PPO trained agent directory (where PPO_scratch is saved)
 #model_path_global = "../trained-agents/PPO_border_GP_d_to_max_only_terminate_after_plume/PPO_scratch"
-model_path_global = "../trained-agents/paper_2D_PPO_space_10M/PPO_scratch"
+model_path_global = "../trained-agents/PPO_border_gp_4254183/PPO_scratch"
 
 def test_agent():
-    VISUALISE = False  # Meshcat / real-world simulator
+    VISUALISE = True  # Meshcat / real-world simulator
     VIS_STATE_SPACE = False
     GP = True          # GP on/off
     VIS_GP = False       # GP visualisation
@@ -124,9 +129,11 @@ def test_agent():
     fn=[]
     RMSE_c=[]
     extracted_GP_imgs =[]
+    # defining agent type so it can spawn close to plume
     env, gp_vis = make_test_env(
         GP=GP,
         VIS_GP=VIS_GP,
+        AGENT_TYPE=config["RUN_INFO"]["AGENT_TYPE"],
         VISUALISE=VISUALISE,
         kernel_config=None,
         HRL=False,

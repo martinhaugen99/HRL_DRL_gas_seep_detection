@@ -27,6 +27,11 @@ def make_test_env(GP=True,AGENT_TYPE="CHANGE", VIS_GP=True, VISUALISE = True,ker
     )
     base_env = base_env.unwrapped
     base_env.agent_type = AGENT_TYPE
+    
+    #if border or plume agent, spawn close to source
+    if base_env.agent_type in ["PLUME","BORDER"]:
+        base_env.spawn_close_to_source = True
+
     base_env.train = False
     base_env.random_points = True
     base_env.multiple_gaussians = [1,1] # testing 2 instead of 1 source at the same time
@@ -95,7 +100,8 @@ def test_agent():
     average_plume_coverage =[]
     average_border_coverage =[]
 
-    env, gp_vis = make_test_env(GP=GP, VIS_GP=VIS_GP, VISUALISE=VISUALISE,kernel_config=None, HRL=False,SUB_AGENT_TRAIN_ON_GP=SUB_AGENT_TRAIN_ON_GP)
+    #getting the agent type from the config file, so that it can spawn close to the plume
+    env, gp_vis = make_test_env(GP=GP, AGENT_TYPE=config["RUN_INFO"]["AGENT_TYPE"], VIS_GP=VIS_GP, VISUALISE=VISUALISE,kernel_config=None, HRL=False,SUB_AGENT_TRAIN_ON_GP=SUB_AGENT_TRAIN_ON_GP)
     vis_state_space = visualise_state_space_hrl(VIS_STATE_SPACE,cnn,MapVisualiser,HeatmapVisualiser) # initialising the state space visualisation
 
     for _ in range(EPISODES):

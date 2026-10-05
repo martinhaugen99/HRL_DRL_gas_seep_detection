@@ -83,6 +83,11 @@ def make_test_env(
     )
     base_env = base_env.unwrapped
     base_env.agent_type = AGENT_TYPE
+
+    #spawning close to plume for border and plume agents
+    if base_env.agent_type in ["PLUME", "BORDER"]:
+        base_env.spawn_close_to_source = True
+        
     base_env.train = False
     base_env.random_points = True
     base_env.multiple_gaussians = [1, 1]
@@ -126,7 +131,7 @@ def make_test_env(
 ###### test modes
 
 # Path to your SAC trained agent file (model.save(...))
-model_path_global = "../trained-agents/SAC_plume_GP_clipped_RWD_min_steps_in_plume/SAC_scratch"
+model_path_global = "../trained-agents/SAC_border_gp_4254183/SAC_scratch"
 
 
 def test_agent():
@@ -162,7 +167,7 @@ def test_agent():
     # For SAC: for_sac=True so we wrap in ContinuousToDiscreteActionWrapper
     env, gp_vis = make_test_env(
         GP=GP,
-        AGENT_TYPE=AGENT_TYPE,
+        AGENT_TYPE=config["RUN_INFO"]["AGENT_TYPE"],
         VIS_GP=VIS_GP,
         VISUALISE=VISUALISE,
         kernel_config=None,

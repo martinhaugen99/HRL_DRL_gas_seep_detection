@@ -445,7 +445,7 @@ class HUGIN(gym.Env):
         return ix, iy, iz
 
 
-    def _sample_position_close_to_source(self, r_min=4, r_max=6, max_tries=1000, margin_x=2, margin_y = 2, margin_z=2):
+    def _sample_position_close_to_source(self, r_min=6, r_max=10, max_tries=1000, margin_x=2, margin_y = 2, margin_z=2):
             cx, cy, cz = np.round(self.gaussian_centers[0])
             R = int(r_max)
     
