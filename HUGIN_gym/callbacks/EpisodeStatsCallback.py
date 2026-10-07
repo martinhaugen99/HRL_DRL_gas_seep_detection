@@ -17,7 +17,6 @@ class EpisodeStatsCallback(BaseCallback):
         self.max_episode_length = max_episode_length
         self.NUM_ENVS = NUM_ENVS
         self.address = address
-        self.last_stats_file = None # only the newest snapshot is kept, since each one holds all episodes so far
         #self.N_states=N_states
         self.episode_counter_above_threshold = []
         self.episode_counter_around_threshold = []
@@ -81,13 +80,12 @@ class EpisodeStatsCallback(BaseCallback):
         # Save periodically (callback calls, not raw timesteps)
         if self.n_calls % self.save_freq == 0:
             stats=self.get_stats()
-            stats_file = f"{self.address}_{self.n_calls*self.NUM_ENVS}.pkl"
-            with open(stats_file, "wb") as f:
+            stats_file = f"{self.address}.pkl" # fixed name: every save overwrites the last one, since each holds all episodes so far
+            tmp_file = f"{stats_file}.tmp"
+            with open(tmp_file, "wb") as f:
                 pickle.dump(stats, f)
-            # remove the previous snapshot only after the new one is written, so a crash always leaves one
-            if self.last_stats_file is not None and os.path.exists(self.last_stats_file):
-                os.remove(self.last_stats_file)
-            self.last_stats_file = stats_file
+            # swap the finished file in, so a crash mid-write never destroys the previous snapshot
+            os.replace(tmp_file, stats_file)
 
         return True
     
