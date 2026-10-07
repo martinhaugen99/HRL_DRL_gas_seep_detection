@@ -8,7 +8,7 @@ import pickle  # saving the stats
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 
-from HUGIN_gym.utils.io import confirm_overwrite
+from HUGIN_gym.utils.io import append_resume_log, confirm_overwrite, find_latest_checkpoint
 from HUGIN_gym.envs.wrappers.DynamicEpisodeLengthWrapper import DynamicEpisodeLengthWrapper
 from HUGIN_gym.envs.wrappers.FilterObservationWrapper import FilterObservationWrapper
 from HUGIN_gym.callbacks.EpisodeStatsCallback import EpisodeStatsCallback
@@ -27,6 +27,7 @@ def main():
     preset_group.add_argument("--full", action="store_true")
     preset_group.add_argument("--compare", action="store_true")
     parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: the preset's name)")
+    parser.add_argument("--resume", action="store_true", help="continue the run in ../trained-agents/<name> from its newest checkpoint")
     args = parser.parse_args()
     if args.smoke:
         config = SMOKE_CONFIG
@@ -88,9 +89,11 @@ def main():
 
     NAME = args.name or config["name"]
     saving_location = f"../trained-agents/{NAME}"
-    loading_location = "../trained-agents/..._what_so_ever_..."
 
-    confirm_overwrite(saving_location)
+    if args.resume:
+        checkpoint_path, checkpoint_step = find_latest_checkpoint(saving_location, "PPO_checkpoint")
+    else:
+        confirm_overwrite(saving_location)
 
     def episode_length_schedule(local_step):
         # Placeholder for a more complex function
@@ -152,11 +155,9 @@ def main():
 
     policy_kwargs = dict(features_extractor_class=Agent, net_arch=dict(pi=[128, 128], vf=[128, 128]))    # network size 64x64
 
-    load_existing = False  # switch to True if you want to resume
-
-    if load_existing:
+    if args.resume:
         model = PPO.load(
-            f"{loading_location}/PPO_scratch", env=env, tensorboard_log="./tensorboard_logs/"
+            checkpoint_path, env=env, tensorboard_log=f"{saving_location}/tensorboard"
         )
     else:
         # PPO hyperparameters – you can tune these
@@ -198,24 +199,32 @@ def main():
         save_replay_buffer=False,  # PPO has no replay buffer, but flag is accepted
     )
 
-    # Save training config
-    build_training_config_ppo(
-        model,
-        AGENT_TYPE,
-        keys_you_want_to_keep,
-        agent_reward_path,
-        max_steps,
-        MAX_EPS_LEN,
-        checkpoint_steps,
-        saving_location,
-        kernel_config=kernel_config if GP else None,
-    )
+    if args.resume:  # keep the config (and start time) the run was started with
+        append_resume_log(
+            saving_location,
+            f"resumed from {checkpoint_path.name}, {stats_callback.load_snapshot(up_to_step=checkpoint_step)}",
+        )
+    else:
+        # Save training config
+        build_training_config_ppo(
+            model,
+            AGENT_TYPE,
+            keys_you_want_to_keep,
+            agent_reward_path,
+            max_steps,
+            MAX_EPS_LEN,
+            checkpoint_steps,
+            saving_location,
+            kernel_config=kernel_config if GP else None,
+        )
 
     # TRAIN
+    # a resumed run continues its step count and tensorboard curves up to max_steps
     model.learn(
-        total_timesteps=max_steps,
+        total_timesteps=max_steps - model.num_timesteps,
         callback=[stats_callback, checkpoint_callback],
         progress_bar=True,
+        reset_num_timesteps=not args.resume,
     )
 
     # SAVING

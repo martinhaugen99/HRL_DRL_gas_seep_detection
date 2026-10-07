@@ -2,6 +2,8 @@
 # Fox (UiO) Slurm job: trains the plume agent with DQN, PPO and SAC in parallel, one array task per algorithm.
 # Submit from the repository root:   sbatch fox_train.sh <tag>        e.g. sbatch fox_train.sh gp_230steps
 # Only one algorithm, e.g. PPO:      sbatch --array=1 fox_train.sh <tag>
+# Resume runs from their newest checkpoint: sbatch fox_train.sh <tag> <job id of the runs>
+#                                    e.g. sbatch --array=0,2 fox_train.sh compare_100M 4259604   (DQN and SAC only)
 # Runs are saved as ../trained-agents/{DQN,PPO,SAC}_<tag>_<job id>; the job id makes every submission unique.
 #SBATCH --account=ec12              # <-- your Educloud project
 #SBATCH --job-name=hugin-plume
@@ -26,10 +28,17 @@ export MPLBACKEND=Agg                      # compute nodes have no display
 cd "$SLURM_SUBMIT_DIR"                     # runs write to ../trained-agents/<run name>
 PY=.venv/bin/python
 TAG=${1:-plume}                            # first argument after the script name in sbatch
-RUN="${TAG}_${SLURM_ARRAY_JOB_ID}"
+RESUME_ID=${2:-}                           # second argument: job id of the runs to resume (none: start new runs)
+if [[ -n "$RESUME_ID" ]]; then
+    RUN="${TAG}_${RESUME_ID}"              # continue in the existing run folders
+    RESUME_FLAG="--resume"
+else
+    RUN="${TAG}_${SLURM_ARRAY_JOB_ID}"
+    RESUME_FLAG=""
+fi
 
 case "$SLURM_ARRAY_TASK_ID" in
-    0) $PY -m HUGIN_gym.training.train_DDQN --name "DQN_$RUN" ;;
-    1) $PY -m HUGIN_gym.training.train_PPO --compare --name "PPO_$RUN" ;;
-    2) $PY -m HUGIN_gym.training.train_SAC --name "SAC_$RUN" ;;
+    0) $PY -m HUGIN_gym.training.train_DDQN --name "DQN_$RUN" $RESUME_FLAG ;;
+    1) $PY -m HUGIN_gym.training.train_PPO --compare --name "PPO_$RUN" $RESUME_FLAG ;;
+    2) $PY -m HUGIN_gym.training.train_SAC --name "SAC_$RUN" $RESUME_FLAG ;;
 esac
