@@ -1,6 +1,10 @@
-import os
-import sys
+import datetime
 import json
+import os
+import re
+import sys
+from pathlib import Path
+
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.type_aliases import TrainFrequencyUnit
@@ -21,6 +25,28 @@ def confirm_overwrite(directory: str):
                     sys.exit(0)
                 else:
                     print("Please enter 'y' or 'n'.")
+
+def find_latest_checkpoint(run_dir: str | Path, prefix: str) -> tuple[Path, int]:
+    """Return the newest <prefix>_<steps>_steps.zip in run_dir (as written by CheckpointCallback) and its step count."""
+    pattern = re.compile(rf"{re.escape(prefix)}_(\d+)_steps\.zip")
+    checkpoints = [
+        (int(match.group(1)), path)
+        for path in Path(run_dir).glob(f"{prefix}_*_steps.zip")
+        if (match := pattern.fullmatch(path.name))
+    ]
+    if not checkpoints:
+        raise FileNotFoundError(f"No {prefix}_<steps>_steps.zip in {run_dir}")
+    step, path = max(checkpoints)
+    return path, step
+
+def append_resume_log(run_dir: str | Path, message: str) -> None:
+    """Print message and append it, with the time and the Slurm job, to resume_log.txt in run_dir."""
+    array_job = os.environ.get("SLURM_ARRAY_JOB_ID")
+    job = f"{array_job}_{os.environ.get('SLURM_ARRAY_TASK_ID')}" if array_job else os.environ.get("SLURM_JOB_ID", "local")
+    line = f"{datetime.datetime.now().astimezone():%Y-%m-%d %H:%M:%S} job {job}: {message}"
+    print(line)
+    with (Path(run_dir) / "resume_log.txt").open("a") as f:
+        f.write(f"{line}\n")
 
 def save_training_config(filepath, config_dict):
     with open(filepath, "w") as f:
