@@ -12,3 +12,4 @@ tensorboard_logs/
 .claude/settings.local.json
 (.egg-info/
 *.egg-info/
+slurm-*.out
