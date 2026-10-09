@@ -8,9 +8,9 @@
 #SBATCH --partition=normal
 #SBATCH --array=0-2                  # 0 = DQN, 1 = PPO, 2 = SAC
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16           # 12 env workers + the main process, with headroom
+#SBATCH --cpus-per-task=28           # 12 env workers + the main process, with headroom
 #SBATCH --mem-per-cpu=2G             # 32 GiB per run; a DQN run is estimated to peak around 9 GiB
-#SBATCH --time=16:00:00              # checkpoints (every 1-2M steps) survive if the limit is hit
+#SBATCH --time=60:00:00              # checkpoints (every 1-2M steps) survive if the limit is hit
 #SBATCH --output=slurm-%x-%A_%a.out
 
 set -o errexit

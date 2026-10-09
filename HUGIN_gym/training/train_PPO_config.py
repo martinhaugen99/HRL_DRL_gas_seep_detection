@@ -6,7 +6,7 @@ FULL_CONFIG = {
     "n_steps": 2048,
     "batch_size": 1024,
     "n_epochs": 4,
-    "max_steps": 100_000_000,
+    "max_steps": 60_000_000,
     "checkpoint_steps": 10_500_020,
 }
 
@@ -15,15 +15,16 @@ PAPER_CONFIG = {
     "max_episode_length": 460,
     "gp": False,
     "name": "paper_2D_PPO_space_10M",
-    "n_steps": 512,
+    "n_steps": 1024,
     "max_steps": 10_000_000,
     "checkpoint_steps": 1_000_000,
 }
-
+#used for training border-agent
 GP_2D_CONFIG = {
-    **PAPER_CONFIG,
+    **FULL_CONFIG,
+    "max_episode_length": 460,
     "gp": True,
-    "name": "2D_PPO_border_GP_10M",
+    "name": "PPO_border_GP",
 }
 
 SMOKE_CONFIG = {

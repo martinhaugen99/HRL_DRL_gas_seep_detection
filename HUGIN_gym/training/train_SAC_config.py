@@ -1,16 +1,16 @@
 FULL_CONFIG = {
     "max_episode_length": 460,
-    "num_envs": 12,
+    "num_envs": 24,
     "gp": False,
     "name": "SAC_space_GT_not_clipped_RWD",
     "learning_rate": 5e-5,
     "buffer_size": 900_000,
     "batch_size": 256,
-    "gamma": 0.997,
+    "gamma": 0.9945,
     "tau": 0.01,
     "train_freq": 4,
     "gradient_steps": 4,
-    "max_steps": 10_000_000,
+    "max_steps": 60_000_000,
     "checkpoint_steps": 2_000_000,
     "stats_steps": 5_000_000,
 }
@@ -18,7 +18,7 @@ FULL_CONFIG = {
 GP_2D_CONFIG = {
     **FULL_CONFIG,
     "gp": True,
-    "name": "2D_SAC_border_GP_10M",
+    "name": "SAC_border_GP",
 }
 
 SMOKE_CONFIG = {

@@ -35,7 +35,7 @@ def main():
     MAX_EPS_LEN = config["max_episode_length"]
     NUM_ENVS = config["num_envs"]
     GP = config["gp"]
-    ACCURACY_GOALS = [0.9, 1.0, 1.0]
+    ACCURACY_GOALS = [0.9, 1.0, 0.9]
     SUB_AGENT_TRAIN_ON_GP = True
     AGENT_TYPE = "BORDER"
 

@@ -131,7 +131,7 @@ def make_test_env(
 ###### test modes
 
 # Path to your SAC trained agent file (model.save(...))
-model_path_global = "../trained-agents/SAC_border_gp_4254183/SAC_scratch"
+model_path_global = "../trained-agents/SAC_border_4271779/SAC_scratch"
 
 
 def test_agent():

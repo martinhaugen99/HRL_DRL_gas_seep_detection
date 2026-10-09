@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import json
 import os
 import numpy as np
 import pickle
@@ -6,9 +7,20 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 
 # --- Load ---
-base_path = os.path.join(os.path.dirname(__file__), "../../../trained-agents/paper_2D_PPO_space_10M")
+base_path = os.path.join(os.path.dirname(__file__), "../../../trained-agents/SAC_border_4271779")
 with open(os.path.join(base_path, "training_stats.pkl"), "rb") as f:
     stats = pickle.load(f)
+
+with open(os.path.join(base_path, "training_config.json")) as f:
+    config = json.load(f)
+
+agent_type = config["RUN_INFO"]["AGENT_TYPE"]
+# the config holds e.g. "PPO_HYPERPARAMETERS" next to "HRL_HYPERPARAMETERS"
+algorithm = next(
+    key.removesuffix("_HYPERPARAMETERS")
+    for key in config
+    if key.endswith("_HYPERPARAMETERS") and key != "HRL_HYPERPARAMETERS"
+)
 
 # --- Helpers ---
 def running_mean_std(data, window, step=10):
@@ -106,9 +118,13 @@ for ax, (label, data), color in zip(
         ylim=(0, 100) if "%" in label else None,
         to_pct="%" in label
     )
+    ax.set_title(label, fontsize=14)
 
 # --- Reward curves (last subplot) ---
 plot_reward_curves(axes[-1], stats["episode_rewards"])
+axes[-1].set_title("Reward per Step", fontsize=14)
+
+fig.suptitle(f"Agent: {agent_type}  |  Algorithm: {algorithm}", fontsize=18)
 
 # --- Save ---
 plt.tight_layout()

@@ -40,7 +40,7 @@ def main():
     MAX_EPS_LEN = config["max_episode_length"]
     NUM_ENVS = config["num_envs"]
     GP = config["gp"]
-    ACCURACY_GOALS = [0.90, 1.0, 1.0] #0.9
+    ACCURACY_GOALS = [0.90, 1.0, 0.90]
     SUB_AGENT_TRAIN_ON_GP = True
     AGENT_TYPE = "BORDER"
 
@@ -167,7 +167,7 @@ def main():
             n_steps=config["n_steps"],   # per env; effective batch size = n_steps * NUM_ENVS
             batch_size=config["batch_size"],
             n_epochs=config["n_epochs"],
-            gamma=0.9975,                # keep your discount for comparability
+            gamma=0.9945,                # keep your discount for comparability
             gae_lambda=0.95,
             clip_range=0.2,
             ent_coef=0.01,
