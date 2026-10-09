@@ -11,7 +11,9 @@ def run_episode(env,
                 VISUALISE=None,
                 verbose = 0,
                 testing_space_agent = False,
-                CoverageBarVisualiser=False,):
+                CoverageBarVisualiser=False,
+                step_delay=0.0, # seconds to wait after each step in the Meshcat view
+                pause_at_end=False,): # wait for Enter before the view is cleared at episode end
     keys_to_keep = config["RUN_INFO"]["filtered_obs_keys"]
     agent_type = config["RUN_INFO"]["AGENT_TYPE"]
     
@@ -98,7 +100,7 @@ def run_episode(env,
         # ---- VISUAL ----
         if VISUALISE:
             env.unwrapped.step_sim()
-            #time.sleep(0.01)
+            time.sleep(step_delay)
 
         step_count += 1
         # ---- UPDATE VIS - State-Space
@@ -128,6 +130,8 @@ def run_episode(env,
 
 
             if VISUALISE:
+                if pause_at_end:
+                    input("Episode done. Press Enter for the next episode...")
                 env.unwrapped.renderer.reset()
 
             return {

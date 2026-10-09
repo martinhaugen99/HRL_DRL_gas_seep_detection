@@ -88,7 +88,7 @@ def make_test_env(
 
 # Path to your PPO trained agent directory (where PPO_scratch is saved)
 #model_path_global = "../trained-agents/PPO_border_GP_d_to_max_only_terminate_after_plume/PPO_scratch"
-model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/PPO_compare_4223553/PPO_scratch.zip"
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained_agents/PPO_compare_100M_4259604/PPO_scratch.zip"
 
 def test_agent():
     VISUALISE = True  # Meshcat / real-world simulator
@@ -97,6 +97,8 @@ def test_agent():
     VIS_GP = False       # GP visualisation
     EPISODES = 100
     SUB_AGENT_TRAIN_ON_GP = True
+    STEP_DELAY = 0.2       # seconds between steps in the Meshcat view (0 = full speed)
+    PAUSE_AT_END = True    # wait for Enter before the next episode clears the view
 
     # Load PPO model
     try:
@@ -154,7 +156,9 @@ def test_agent():
             VISUALISE=VISUALISE,
             testing_space_agent=True,
             CoverageBarVisualiser=CoverageBarVisualiser,
-            verbose=False # True
+            verbose=False, # True
+            step_delay=STEP_DELAY,
+            pause_at_end=PAUSE_AT_END,
         )
 
         try:
