@@ -77,7 +77,9 @@ def test_agent():
     VIS_GP = False             # GP visualisation
     EPISODES = 1000
     SUB_AGENT_TRAIN_ON_GP=True
-    
+    STEP_DELAY = 0.2       # seconds between steps in the Meshcat view (0 = full speed)
+    PAUSE_AT_END = True    # wait for Enter before the next episode clears the view
+   
     # Load model
     try:
         model = DQN.load(model_path_global)
@@ -111,6 +113,8 @@ def test_agent():
             GP=GP,
             VISUALISE=VISUALISE,
             testing_space_agent = False, # for getting border and plume coverrage. Otherwise c_map is off
+            step_delay=STEP_DELAY,
+            pause_at_end=PAUSE_AT_END,
         )
         
         average_border_coverage.append(result["border_coverage"])

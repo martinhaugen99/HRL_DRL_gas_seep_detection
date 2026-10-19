@@ -140,7 +140,9 @@ def test_agent():
     EPISODES = 1000
     SUB_AGENT_TRAIN_ON_GP = True
     AGENT_TYPE = "PLUME"   # set accordingly
-
+    STEP_DELAY = 0.2       # seconds between steps in the Meshcat view (0 = full speed)
+    PAUSE_AT_END = True    # wait for Enter before the next episode clears the view
+ 
     # Load SAC model
     try:
         model = SAC.load(model_path_global)
@@ -188,6 +190,8 @@ def test_agent():
             GP=GP,
             VISUALISE=VISUALISE,
             testing_space_agent=False,
+            step_delay=STEP_DELAY,
+            pause_at_end=PAUSE_AT_END,
         )
 
         average_border_coverage.append(result["border_coverage"])
