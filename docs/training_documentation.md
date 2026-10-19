@@ -4,7 +4,7 @@ This file records every training run of the plume agent on Fox: the settings, wh
 
 - **Run folders:** `../trained_agents/<run>` on this machine. On Fox the training scripts write to `../trained-agents/<run>`.
 - **Run names:** `<ALG>_<tag>_<Slurm job ID>`, set by [fox_train.sh](../fox_train.sh). One `sbatch fox_train.sh <tag>` starts DQN, PPO and SAC as one array job, so all three share the job ID.
-- **Copies in git:** [training_runs/](training_runs/) holds `training_stats.png` and `training_config.json` for each run. The SVG plots, the models and the stats pickles stay in `../trained_agents`.
+- **Copies in git:** [training_runs/](training_runs/) holds `training_stats.png` and `training_config.json` for each run, and `resume_log.txt` for runs that were resumed after a failed job. The SVG plots, the models and the stats pickles stay in `../trained_agents`.
 - **Why the methods are set up the way they are:** [comparing_training_methods.md](comparing_training_methods.md).
 
 ## How to read the results
@@ -34,9 +34,9 @@ The plots come from [training_data_visualiser.py](../HUGIN_gym/evaluation/traini
 |---|---|---|---|---|---|---|
 | 1 | `gp_230steps` | 4218364 | 2026-09-24 22:01 | `f220184` | First runs of all three algorithms on Fox | Finished |
 | 2 | `compare` | 4223550, 4223553, 4223557 | 2026-09-26 13:35–13:49 | `961f7a2` | Same task, budget and network size for all three algorithms; start near the plume; random plume size; less DQN exploration. 3 repeats | Finished |
-| 3 | `compare_100M` | 4259604, 4259607, 4259610 | after 2026-10-02 | `d80a55e` | 10× the steps, 24 envs, 460-step episodes, 128 × 128 networks. 3 repeats | Submitted, results pending |
+| 3 | `compare_100M` | 4259604, 4259607, 4259610; resumed as 4272086, 4272088, 4272091 | 2026-10-04 22:31 – 2026-10-05 05:05 | `10e4023`; resumed with `bf7e7fc` | 10× the steps, 24 envs, 460-step episodes, 128 × 128 networks. 3 repeats | Finished; 8 of 9 runs resumed after a full disk quota |
 
-"Started" is `RUN_INFO.timestamp` in `training_config.json`. "Code" is the last commit before the run started.
+"Started" is `RUN_INFO.timestamp` in `training_config.json`. "Code" is the last commit before the run started. From run 3 on, it is the commit checked out on Fox when the job started (`git reflog --date=iso` on Fox).
 
 ## Settings shared by all runs
 
@@ -226,9 +226,9 @@ Mean ± std over the last 1,000 training episodes of each run:
 
 - **Goal:** the run 2 setup with 10× the training budget, longer episodes and larger networks.
 - **Submitted with:** `sbatch fox_train.sh compare_100M` (3 times)
-- **Code:** `d80a55e` (2026-10-02).
-- **Fox resources per algorithm:** 28 CPUs, 2 GB per CPU (56 GB), 60 h limit.
-- **Status:** submitted, results pending.
+- **Code:** `10e4023` (2026-10-04), pulled on Fox one minute before the first submission. On top of `d80a55e`, it only deletes older episode stats snapshots, so the training settings are those of `d80a55e`. The resumed runs used `bf7e7fc` (see [Failure and resume](#failure-and-resume)).
+- **Fox resources per algorithm:** 28 CPUs, 2 GB per CPU (56 GB), 60 h limit. The Slurm log of the DQN job `4259604_0` reports a memory peak of 29.3 GiB and an average CPU use of 20.5 %.
+- **Status:** finished. 8 of the 9 runs failed after about 24 h because the disk quota was full, and were resumed from their newest checkpoint.
 
 ### What changed from run 2
 
@@ -257,25 +257,93 @@ Values in bold changed from run 2. The algorithm settings are unchanged from run
 | Checkpoint every | **10M steps** | **10M steps** | **10M steps** |
 | Start position | near the plume | near the plume | near the plume |
 | Plume size | σ random in [2.0, 5.0] | σ random in [2.0, 5.0] | σ random in [2.0, 5.0] |
+| Wall-clock time (approx., 3 runs, first job + resume) | 38.4–49.0 h | 20.2–27.3 h | 49.6–53.9 h |
 
 ### Points to keep in mind when reading the results
 
 - Several settings changed at once, so the difference from run 2 cannot be traced to a single parameter.
+- The step limit doubled from 230 to 460, so the agent has twice as many steps to reach the goal. "Ended early", the episode length and the total reward are therefore not directly comparable with run 2.
 - `gamma` stays 0.995, which looks about 200 steps ahead (1 / (1 − 0.995)), while episodes can now last 460 steps.
 - DQN's `exploration_fraction` stays 0.2, which now means 20M steps of decreasing exploration (2M in run 2). `learning_starts` (400,000) and the replay buffers (DQN 800,000, SAC 900,000) are unchanged, so they are a smaller share of the run.
 - PPO now collects `n_steps` 2048 × 24 envs = 49,152 steps per update (24,576 in run 2).
-- In run 2, SAC needed up to 12 h for 10M steps. If a run hits the 60 h limit, the last 10M-step checkpoint is kept.
-- Commit `10e4023` (2026-10-04) keeps only the newest `episode_stats_*.pkl` snapshot. It only applies to these jobs if they started after that commit was pulled on Fox.
+- The resumed DQN and SAC runs restarted with an empty replay buffer (see [Failure and resume](#failure-and-resume)), so they are not quite the same as uninterrupted runs.
 
-### To fill in when the runs are downloaded
+### Failure and resume
 
-- Start time (`RUN_INFO.timestamp` in `training_config.json`) and wall-clock time.
-- Copy `training_stats.png` and `training_config.json` to `training_runs/<run>/`.
-- Numbers table, plots and observations.
+On 2026-10-06, 8 of the 9 jobs stopped with state FAILED: 7 between 04:09 and 04:10, and `PPO_compare_100M_4259610` at 04:33. Only `PPO_compare_100M_4259604` finished in one job. No job was close to the 60 h limit.
+
+- **Cause:** the disk quota of the home directory on Fox was full. The Slurm log of `4259604_0` (DQN) ends with `OSError: [Errno 122] Disk quota exceeded`, raised while TensorBoard wrote its log file. All runs write to `../trained-agents` in the home directory, so they share one quota. The logs of the other 7 failed jobs were not checked, but they stopped in the same minute (`PPO_compare_100M_4259610` 24 min later), so the cause is very likely the same.
+- **Code changes before resuming:** `b1813c6` writes the stats snapshots through a temporary file, so a failed write no longer leaves a broken snapshot. `bf7e7fc` adds the `--resume` option to the training scripts and to `fox_train.sh`, and saves the DQN and SAC stats every 10M steps (was 5M), at the same steps as the checkpoints.
+- **Resumed with:** `sbatch --array=0,2 fox_train.sh compare_100M 4259604` (DQN and SAC only), `sbatch fox_train.sh compare_100M 4259607` and `sbatch fox_train.sh compare_100M 4259610`, on 2026-10-08/09 with code `bf7e7fc`.
+- **What a resume keeps:** the networks, the step count and DQN's ε schedule (already at its final 0.05) continue from the newest checkpoint. The episode stats are cut at the checkpoint step, so episodes from the steps that ran twice are only counted once (`DQN_compare_100M_4259604` dropped 28,535 episodes). Each run folder has a `resume_log.txt` with the checkpoint and the stats file it used.
+- **What a resume loses:** the DQN and SAC replay buffers are not saved, so they start empty. The step count is already past `learning_starts`, so training restarts at once on a nearly empty buffer. PPO has no replay buffer.
+
+| Run | First job | First job reached | Resumed from | Steps run twice | Resume job | Total time |
+|---|---|---|---|---|---|---|
+| `DQN_compare_100M_4259604` | `4259604_0`, 29.6 h | 65–70M | 60M | 5–10M | `4272086_0`, 19.3 h | 49.0 h |
+| `DQN_compare_100M_4259607` | `4259607_0`, 24.1 h | 65–70M | 60M | 5–10M | `4272088_0`, 14.2 h | 38.4 h |
+| `DQN_compare_100M_4259610` | `4259610_0`, 23.7 h | 60–65M | 60M | 0–5M | `4272091_0`, 15.9 h | 39.6 h |
+| `PPO_compare_100M_4259604` | `4259604_1`, 20.2 h | 100M (finished) | – | – | – | 20.2 h |
+| `PPO_compare_100M_4259607` | `4259607_1`, 24.1 h | 100M | 90M | 10M | `4272088_1`, 3.2 h | 27.3 h |
+| `PPO_compare_100M_4259610` | `4259610_1`, 23.8 h | 100M | 90M | 10M | `4272091_1`, 1.4 h | 25.2 h |
+| `SAC_compare_100M_4259604` | `4259604_2`, 24.3 h | 40–45M | 40M | 0–5M | `4272086_2`, 25.3 h | 49.6 h |
+| `SAC_compare_100M_4259607` | `4259607_2`, 24.1 h | 45–50M | 40M | 5–10M | `4272088_2`, 29.8 h | 53.9 h |
+| `SAC_compare_100M_4259610` | `4259610_2`, 23.1 h | 40–45M | 40M | 0–5M | `4272091_2`, 30.1 h | 53.2 h |
+
+- The times are the `Elapsed` times from `sacct`. "Total time" is the sum of both jobs and includes the steps that ran twice.
+- "First job reached" follows from the stats snapshots in the resume logs: the first job wrote the newest snapshot that the resume found, but not the next one (snapshots every 5M steps for DQN and SAC, every 10M for PPO).
+- Both resumed PPO runs left an unreadable snapshot at 99,999,840 steps. They failed while writing it, 160 steps before the 100M limit and before the last checkpoint was saved, so they resumed from 90M.
+
+### Results
+
+Mean ± std over the last 1,000 training episodes of each run:
+
+| Run | Episodes | Total reward | Episode length | Visited (%) | Plume coverage (%) | Ended early (%) |
+|---|---|---|---|---|---|---|
+| `DQN_compare_100M_4259604` | 479,980 | -60.7 ± 116.8 | 160.3 ± 148.7 | 23.4 ± 17.9 | 95.3 ± 20.2 | 87.1 |
+| `DQN_compare_100M_4259607` | 448,254 | -70.7 ± 120.7 | 176.0 ± 150.6 | 25.4 ± 18.9 | 97.1 ± 15.2 | 87.4 |
+| `DQN_compare_100M_4259610` | 463,638 | -62.6 ± 118.0 | 161.8 ± 152.1 | 22.0 ± 17.2 | 87.3 ± 32.7 | 84.7 |
+| **DQN_compare_100M (mean of 3 runs)** |  | **-64.7 ± 4.3** | **166.0 ± 7.1** | **23.6 ± 1.4** | **93.3 ± 4.3** | **86.4 ± 1.2** |
+| `PPO_compare_100M_4259604` | 2,477,751 | 32.0 ± 5.2 | 33.5 ± 16.2 | 8.1 ± 3.2 | 99.8 ± 0.8 | 100.0 |
+| `PPO_compare_100M_4259607` | 2,557,236 | 32.7 ± 4.8 | 32.2 ± 15.0 | 8.0 ± 3.1 | 99.8 ± 1.0 | 100.0 |
+| `PPO_compare_100M_4259610` | 2,455,487 | 31.6 ± 6.3 | 33.2 ± 16.5 | 7.8 ± 2.9 | 99.9 ± 0.7 | 100.0 |
+| **PPO_compare_100M (mean of 3 runs)** |  | **32.1 ± 0.4** | **33.0 ± 0.6** | **8.0 ± 0.1** | **99.8 ± 0.0** | **100.0 ± 0.0** |
+| `SAC_compare_100M_4259604` | 878,218 | -22.2 ± 105.0 | 88.4 ± 84.6 | 8.8 ± 4.7 | 99.3 ± 4.7 | 98.2 |
+| `SAC_compare_100M_4259607` | 1,036,931 | -6.1 ± 64.2 | 72.1 ± 68.2 | 8.4 ± 4.2 | 98.7 ± 9.4 | 98.8 |
+| `SAC_compare_100M_4259610` | 938,244 | -19.9 ± 87.8 | 87.4 ± 88.7 | 8.7 ± 4.7 | 97.7 ± 13.0 | 97.1 |
+| **SAC_compare_100M (mean of 3 runs)** |  | **-16.1 ± 7.1** | **82.6 ± 7.4** | **8.6 ± 0.1** | **98.6 ± 0.6** | **98.0 ± 0.7** |
+
+**DQN**
+
+![DQN compare_100M 4259604](training_runs/DQN_compare_100M_4259604/training_stats.png)
+![DQN compare_100M 4259607](training_runs/DQN_compare_100M_4259607/training_stats.png)
+![DQN compare_100M 4259610](training_runs/DQN_compare_100M_4259610/training_stats.png)
+
+**PPO**
+
+![PPO compare_100M 4259604](training_runs/PPO_compare_100M_4259604/training_stats.png)
+![PPO compare_100M 4259607](training_runs/PPO_compare_100M_4259607/training_stats.png)
+![PPO compare_100M 4259610](training_runs/PPO_compare_100M_4259610/training_stats.png)
+
+**SAC**
+
+![SAC compare_100M 4259604](training_runs/SAC_compare_100M_4259604/training_stats.png)
+![SAC compare_100M 4259607](training_runs/SAC_compare_100M_4259607/training_stats.png)
+![SAC compare_100M 4259610](training_runs/SAC_compare_100M_4259610/training_stats.png)
+
+### Observations
+
+- **Spread between repeats:** very small for PPO (the run means of the reward range from 31.6 to 32.7). Larger for SAC (−22.2 to −6.1) and for DQN, where `4259610` has a lower plume coverage (87.3 %) than the other two (95–97 %).
+- **DQN:** the reward rises from about −1,000 to about −100 in the first ~100k episodes, then improves slowly to about −65 over the remaining ~350k. The curves stay noisy, with repeated dips in the reward and jumps in the episode length during the whole run. The episode length ends at about 165 steps (std about 150), and 86 % of the episodes end early (37.5 % in run 2). It visits about 24 % of the map, about 3× as much as PPO and SAC.
+- **PPO:** the reward reaches about +30 within the first ~0.2M of about 2.5M episodes and then stays flat, while the episode length keeps falling slowly to about 33 steps. All of the last 1,000 episodes end early, with 99.8 % plume coverage and 8 % of the map visited. Most of the training budget was spent after the reward had levelled off.
+- **SAC:** as in run 2, the episode length stays near the step limit during the first ~10k–20k episodes, and the plume coverage drops to about 30–35 % in this phase. Then the reward rises fast to about −50 and improves slowly to about −16 at the end. 98 % of the last 1,000 episodes end early (69.6 % in run 2), after about 83 steps with 9 % of the map visited. The episode length stays noisier than PPO's (std about 85, against 16 for PPO).
+- **Resume:** `DQN_compare_100M_4259604` shows a dip in the reward and a rise in the episode length near episode 250k, close to where it resumed (episode 247,716). The DQN curves have similar dips elsewhere, so the plots alone do not show whether the empty replay buffer caused it. The SAC plots show no clear change where the runs resumed (episodes 258k–314k).
+- **Wall-clock time:** PPO was the fastest, and the only algorithm with a run that finished in one job (20.2 h for 100M steps). In the about 24 h before the failure, the first jobs reached 60–70M steps for DQN and 40–50M for SAC.
 
 ## Adding a new run
 
 1. Before submitting: commit the changes and note the commit. Submit with `sbatch fox_train.sh <tag>` and note the job ID(s).
 2. Add a row to the overview table and a section with the goal, what changed (with commits and why), the settings tables and the Fox resources.
-3. After downloading: make the plot with [training_data_visualiser.py](../HUGIN_gym/evaluation/training_data_visualiser.py). Copy `training_stats.png` and `training_config.json` to `docs/training_runs/<run>/`. Run [summarise_training_stats.py](../HUGIN_gym/evaluation/summarise_training_stats.py) for the numbers table.
-4. Write down what the curves and the numbers show.
+3. If a job fails: find the cause in `slurm-hugin-plume-<job ID>_<array index>.out` on Fox. Resume the runs from their newest checkpoint with `sbatch fox_train.sh <tag> <job ID>` (add `--array=...` to resume only some algorithms) and note the resume job IDs. Get the start, end and elapsed times with `sacct -j <job IDs> --format=JobID,Start,End,Elapsed,State`.
+4. After downloading: make the plot with [training_data_visualiser.py](../HUGIN_gym/evaluation/training_data_visualiser.py). Copy `training_stats.png`, `training_config.json` and, for a resumed run, `resume_log.txt` to `docs/training_runs/<run>/`. Run [summarise_training_stats.py](../HUGIN_gym/evaluation/summarise_training_stats.py) for the numbers table.
+5. Write down what the curves and the numbers show.
