@@ -319,5 +319,5 @@ if "episode_counter_above_threshold" in stats:
 
 # Remove title
 plt.tight_layout()
-plt.savefig(os.path.join(os.path.dirname(__file__),training_stats_path, "training_stats.png"),format="png")  # Save the figure with high resolution
+plt.savefig(os.path.join(os.path.dirname(__file__),training_stats_path, "training_stats.svg"),format="svg")  # Save the figure with high resolution
 plt.show()

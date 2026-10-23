@@ -126,7 +126,7 @@ def make_test_env(
 ###### test modes
 
 # Path to your SAC trained agent file (model.save(...))
-model_path_global = "trained-agents/SAC_space_GT_not_clipped_RWD/SAC_scratch.zip"
+model_path_global = "trained-agents/SAC_space_30M_full/SAC_scratch.zip"
 
 
 def test_agent():
@@ -136,7 +136,7 @@ def test_agent():
     VIS_GP = False         # GP visualisation
     EPISODES = 1000
     SUB_AGENT_TRAIN_ON_GP = True
-    AGENT_TYPE = "PLUME"   # set accordingly
+    AGENT_TYPE = "SPACE"   # set accordingly
 
     # Load SAC model
     try:

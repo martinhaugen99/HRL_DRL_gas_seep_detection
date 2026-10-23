@@ -65,7 +65,8 @@ def make_test_env(GP=True,AGENT_TYPE="CHANGE", VIS_GP=True, VISUALISE = True,ker
 ###### test modes
 
 
-model_path_global = "trained-agents/DDQN_space/DQN_scratch.zip"
+model_path_global = "trained-agents/DDQN_space_100M/DQN_checkpoint_93999624_steps.zip"
+
 
 def test_agent():
     VISUALISE = True      # Meshcat / real-world simulator

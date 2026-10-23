@@ -43,13 +43,18 @@ def main():
         #     keys_you_want_to_keep.append("c_over_threshold_maps")
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
                 
-    NAME = "DDQN_space_eps_len_460"
+    NAME = "DDQN_space_100M"
    
 
     saving_location = f"../trained-agents/{NAME}"
-    loading_location = "../trained-agents/..._what_so_ever_..."
-    
-    confirm_overwrite(saving_location)
+    loading_location = saving_location  # resuming DDQN_space_100M from its own last checkpoint
+    RESUME_CHECKPOINT = "DQN_checkpoint_93999624_steps"  # last checkpoint before the 16h TIMEOUT
+    RESUME_TOTAL_STEPS_SO_FAR = 93_999_624
+
+    load_existing = True  # resuming to finish the remaining steps to 100M
+
+    if not load_existing:
+        confirm_overwrite(saving_location)
 
     def episode_length_schedule(local_step):
         return MAX_EPS_LEN  # Spaceholder for a more complex function
@@ -91,11 +96,9 @@ def main():
     env = VecMonitor(SubprocVecEnv(env_fns)) # records episode reward/length for tensorboard, obs/rewards pass through unchanged
     policy_kwargs = dict(features_extractor_class=Agent)
     
-    load_existing = False  # switch to False to train from scratch
-
     if load_existing:
-        model = DQN.load(f"{loading_location}/DQN_scratch",env=env,tensorboard_log="./tensorboard_logs/")
-        model.load_replay_buffer(f"{loading_location}/DQN_replay_buffer.pkl")
+        model = DQN.load(f"{loading_location}/{RESUME_CHECKPOINT}", env=env, tensorboard_log=f"{saving_location}/tensorboard")
+        # no replay buffer to restore: CheckpointCallback was run with save_replay_buffer=False
     else:
         model = DQN(
             "MultiInputPolicy", # MultiInputPolicy for a dict observation space and MlpPolicy for a flat observation space
@@ -119,7 +122,8 @@ def main():
     # INIT (insert here)
     # custom_callback = CustomWandbCallback()  # For your mean_q logging
 
-    max_steps =  10_000_000
+    TOTAL_TARGET_STEPS = 100_000_000
+    max_steps = TOTAL_TARGET_STEPS - RESUME_TOTAL_STEPS_SO_FAR if load_existing else TOTAL_TARGET_STEPS
     checkpoint_steps = 2_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
     stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
     # --- get max_return safely before SubprocVecEnv ---
@@ -132,7 +136,7 @@ def main():
 
     
     # -- TRAINING --
-    model.learn(total_timesteps=max_steps, callback=[stats_callback, checkpoint_callback], progress_bar=True) #,wandb_callback,custom_callback
+    model.learn(total_timesteps=max_steps, callback=[stats_callback, checkpoint_callback], progress_bar=True, reset_num_timesteps=not load_existing) #,wandb_callback,custom_callback
 
     # --SAVING--
 

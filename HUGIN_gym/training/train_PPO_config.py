@@ -14,10 +14,10 @@ PAPER_CONFIG = {
     **FULL_CONFIG,
     "max_episode_length": 460,
     "gp": False,
-    "name": "paper_2D_PPO_space_10M",
+    "name": "PPO_space_30M",
     "n_steps": 512,
-    "max_steps": 10_000_000,
-    "checkpoint_steps": 1_000_000,
+    "max_steps": 30_000_000,
+    "checkpoint_steps": 2_000_000,
 }
 
 SMOKE_CONFIG = {

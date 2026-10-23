@@ -12,39 +12,37 @@ from HUGIN_gym.utils.io import load_training_config_from_model
 base_dir = "../../../trained-agents"
 
 runs = [
-    "PPO_NEW_plume_GP_clipped_RWD", # NOTE exchange against new PPO!!
-    "NEW_plume_GP_clipped_RWD_min_steps_in_plume",
-    #"PPO_plume_GP_not_clipped_RWD_update_local_map_earlier",
-    "SAC_plume_GP_not_clipped_RWD", #NOTE exchange against SAC!!
+    "DDQN_space",
+    "paper_2D_PPO_space_10M",
+    "SAC_space_GT_not_clipped_RWD",
+    # "3D_PPO_space_test",  # 3D env + only ~300k steps -> not comparable to the 2D runs above
 ]
 
 suffix = "training_stats.pkl"
 
 # fixed colors per run
 run_colors = {
-    "PPO_NEW_plume_GP_clipped_RWD":      "violet",
-    "NEW_plume_GP_clipped_RWD_min_steps_in_plume":   "green",
-    "PPO_plume_GP_not_clipped_RWD_update_local_map_earlier":      "blue",
-    "SAC_plume_GP_not_clipped_RWD":      "red",
+    "DDQN_space":                    "green",
+    "paper_2D_PPO_space_10M":        "violet",
+    "SAC_space_GT_not_clipped_RWD":  "red",
 }
 
 # nice labels per run (legend names)
 run_labels = {
-    "PPO_NEW_plume_GP_clipped_RWD":      "(a) PPO @224min",
-    "NEW_plume_GP_clipped_RWD_min_steps_in_plume":   "(b) DDQN @173min",
-    "PPO_plume_GP_not_clipped_RWD_update_local_map_earlier": "(c) new PPO @+107min",
-    "SAC_plume_GP_not_clipped_RWD":      "(d) SAC @241min",
+    "DDQN_space":                    "(a) DDQN",
+    "paper_2D_PPO_space_10M":        "(b) PPO",
+    "SAC_space_GT_not_clipped_RWD":  "(c) SAC",
 }
 
 window_size = 20000
 step = 10
 
-GP = True         # set True if you want the GP-specific counters
-SUB_POLICY_GP = True
-AGENT_TYPE = "PLUME"
+GP = False         # SPACE agent runs are not GP/plume/border-based
+SUB_POLICY_GP = False
+AGENT_TYPE = "SPACE"
 
 # Which metrics to plot as separate subplots
-metrics_to_plot = ["reward", "length", "above","assumed_above"]  # 3 plots
+metrics_to_plot = ["reward", "length", "visited"]
 
 
 # =========================
@@ -206,13 +204,8 @@ for i, metric in enumerate(metrics_to_plot):
 
     # Build legend from plotted handles; remove duplicates
     handles, labels = ax.get_legend_handles_labels()
-    unique = dict(zip(labels, handles))  
-    if i==0:
-        ax.set_ylim(bottom=-500)
-    if i>1:
-        ax.set_ylim(bottom=70)
-    # labels as keys
-  
+    unique = dict(zip(labels, handles))
+
 handles, labels = axes[0].get_legend_handles_labels()
 unique = dict(zip(labels, handles))
 fig.legend(

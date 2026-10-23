@@ -66,7 +66,7 @@ def main():
         ]
         agent_reward_path = "./HUGIN_gym/envs/core/rewards/agent2_plume.py"
 
-    NAME = "SAC_space_GT_not_clipped_RWD"
+    NAME = "SAC_space_30M_full"
 
     saving_location = f"../trained-agents/{NAME}"
     loading_location = "../trained-agents/..._what_so_ever_..."
@@ -152,7 +152,7 @@ def main():
             tensorboard_log=f"{saving_location}/tensorboard",  # live curves: tensorboard --logdir ../trained-agents
         )
 
-    max_steps = 10_000_000
+    max_steps = 30_000_000
     checkpoint_steps = 2_000_000 // NUM_ENVS  # save the model every n steps, adjusted for number of parallel envs
     stats_steps = 5_000_000 // NUM_ENVS  # save episode stats every n steps (each file holds all episodes so far)
 

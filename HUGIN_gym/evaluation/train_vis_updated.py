@@ -204,8 +204,8 @@ plt.tight_layout()
 save_path = os.path.join(
     os.path.dirname(__file__),
     training_stats_path,
-    "training_stats.png"
+    "training_stats.svg"
 )
 
-plt.savefig(save_path, format="png")
+plt.savefig(save_path, format="svg")
 plt.show()
