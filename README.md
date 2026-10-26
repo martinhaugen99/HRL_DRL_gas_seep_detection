@@ -146,6 +146,39 @@ The environment can be configured through various parameters:
 - Physics parameters in `HUGIN_gym\envs\core\dynamics.py`
 - Visualization settings in `HUGIN_gym\envs\core\visualisation\renderer.py`
 
+## ⚠️ Intended Use and Limitations
+
+This repository is a research tool. It has not been validated for real leak detection and must not be used as one. This applies to the code and to any trained models released with it.
+
+**Intended use**
+- Research and teaching on (hierarchical) reinforcement learning for autonomous search and gas plume mapping.
+- Comparing algorithms, reward functions, and observation designs in simulation.
+- A starting point for methods that will later be validated with real sensor data and field tests.
+
+**Out of scope**
+- Detecting, or ruling out, real gas leaks at pipelines, CCS sites, or other subsea installations.
+- Providing evidence of "no leak" for regulators, audits, or environmental reporting.
+- Controlling a real AUV without further development, testing, and safety review.
+- Military use, or mapping subsea infrastructure for hostile purposes.
+
+**Known limitations**
+- The simulator is simplified. It uses a 41 x 41 x 41 voxel domain, Gaussian gas sources, five discrete movement actions, and no ocean currents or sensor noise. Real plumes can be stretched by currents, spread out, or come from several sources, and the trained agents may miss them.
+- When the Gaussian process (GP) wrapper is on, the goal check uses the GP estimate of the plume. An episode can count as complete even though the true plume coverage is lower. Treat reported coverage as an estimate, not as ground truth.
+- Training runs are not seeded. Results vary between runs, so compare the mean and spread over several repeats.
+- No result in this repository has been tested on real data.
+
+**If you build on this work**
+- Validate on real or realistic data before any field use.
+- Report the uncertainty of the plume estimate together with any coverage result.
+- Use the agent to support human monitoring, not to replace it.
+- Treat leak maps and survey data near pipelines and cables as sensitive.
+- Follow the laws and permits that apply where you operate. Operating in another state's waters requires that state's consent.
+
+**Why we release the code**
+The repository contains no real survey data, no locations of real infrastructure, and no interface to a real vehicle. It uses standard algorithms from Stable-Baselines3 in a simplified simulator. Releasing it therefore adds little capability for misuse, while it makes the results possible to check and reproduce.
+
+The MIT License permits any use. This section does not change the license. It states what the code was built and tested for, and how we ask others to use it.
+
 ## 📄 License
 
 This project is licensed under the MIT License
