@@ -242,11 +242,50 @@ class GPWrapper(gym.Wrapper):
                 self._overwrite_GT_with_GP(np.array([1.0]),obs_key = "border_coverage" ,obs=obs)
 
         if self.env.unwrapped.agent_type in ("META"):
-            maxN_over_thresh = np.sum(self.env.unwrapped.GT_c_over_threshold_maps).astype(np.float32) 
+            maxN_over_thresh = np.sum(self.env.unwrapped.GT_c_over_threshold_maps).astype(np.float32)
             self._overwrite_GT_with_GP(maxN_over_thresh,env_key = "maxN_over_thresh")
-            maxN_around_thresh = np.sum(self.env.unwrapped.GT_c_around_threshold_maps).astype(np.float32) 
+            maxN_around_thresh = np.sum(self.env.unwrapped.GT_c_around_threshold_maps).astype(np.float32)
             self._overwrite_GT_with_GP(maxN_around_thresh,env_key = "maxN_around_thresh")
+            self._overwrite_reset_obs_with_belief(obs)
         return obs, info
+
+    def _overwrite_reset_obs_with_belief(self, obs):
+        """
+        META: the base env built the first observation from the true plume. Rebuild its plume keys from the
+        empty belief set above (GT_c_*_threshold_maps hold the belief now: only the corner cells), and store the
+        belief patches and maps in the base env, which reuses them on boundary steps before the first GP update.
+        """
+        base = self.env.unwrapped
+        ix, iy, iz = base._pos_to_idx(base.state["x"], base.state["y"], base.state["z"])
+        visited_3d = base.state["visited_map"][:, :, :, 0].astype(bool)
+
+        over_belief_3d = np.logical_and(base.GT_c_over_threshold_maps, visited_3d)
+        base.state["c_over_threshold_map"][:, :, :, 0] = over_belief_3d # as after every GP update in step()
+        local_over_GT = self._get_local_patch(base.GT_c_over_threshold_maps, ix, iy, iz, radius=base.patch_radius)
+        over_downsampled = base.downsample_map(base.GT_c_over_threshold_maps).flatten().astype(np.float32)
+        self._overwrite_GT_with_GP(local_over_GT, env_key="local_GT")
+        self._overwrite_GT_with_GP(over_downsampled, env_key="_gt_over_downsampled")
+        self._overwrite_GT_with_GP(local_over_GT.flatten(), obs_key="local_GT", obs=obs)
+        self._overwrite_GT_with_GP(over_downsampled, obs_key="GT_c_over_threshold_maps_downsampled", obs=obs)
+        plume_coverage = np.array(
+            [np.sum(over_belief_3d) / base.maxN_over_thresh if base.maxN_over_thresh > 0 else 1.0],
+            dtype=np.float32
+        )
+        self._overwrite_GT_with_GP(plume_coverage, obs_key="plume_coverage", obs=obs)
+
+        around_belief_3d = np.logical_and(base.GT_c_around_threshold_maps, visited_3d)
+        base.state["c_around_threshold_map"][:, :, :, 0] = around_belief_3d
+        local_around_GT = self._get_local_patch(base.GT_c_around_threshold_maps, ix, iy, iz, radius=base.patch_radius)
+        around_downsampled = base.downsample_map(base.GT_c_around_threshold_maps).flatten().astype(np.float32)
+        self._overwrite_GT_with_GP(local_around_GT, env_key="local_GT_around")
+        self._overwrite_GT_with_GP(around_downsampled, env_key="_gt_around_downsampled")
+        self._overwrite_GT_with_GP(local_around_GT.flatten(), obs_key="local_GT_around", obs=obs)
+        self._overwrite_GT_with_GP(around_downsampled, obs_key="GT_c_around_threshold_maps_downsampled", obs=obs)
+        border_coverage = np.array(
+            [np.sum(around_belief_3d) / base.maxN_around_thresh if base.maxN_around_thresh > 0 else 1.0],
+            dtype=np.float32
+        )
+        self._overwrite_GT_with_GP(border_coverage, obs_key="border_coverage", obs=obs)
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
@@ -338,7 +377,10 @@ class GPWrapper(gym.Wrapper):
                 local_over_GT = self._get_local_patch(gp_over_3d, ix, iy, iz,
                                                 radius=self.env.unwrapped.patch_radius)
                 self._overwrite_GT_with_GP(local_over_GT.flatten(), obs_key="local_GT", obs=obs)
-                
+                if self.env.unwrapped.agent_type == "META": # boundary steps reuse these: keep them on the belief, not the true plume
+                    self._overwrite_GT_with_GP(local_over_GT, env_key="local_GT")
+                    self._overwrite_GT_with_GP(obs["GT_c_over_threshold_maps_downsampled"], env_key="_gt_over_downsampled")
+
                 if self.gp_visualise:
                     local_over = self._get_local_patch(over_belief_3d, ix, iy, iz,
                                                 radius=self.env.unwrapped.patch_radius)
@@ -388,6 +430,9 @@ class GPWrapper(gym.Wrapper):
                 self._overwrite_GT_with_GP(local_around_GT.flatten(),
                                         obs_key="local_GT_around",
                                         obs=obs)
+                if self.env.unwrapped.agent_type == "META": # boundary steps reuse these: keep them on the belief, not the true plume
+                    self._overwrite_GT_with_GP(local_around_GT, env_key="local_GT_around")
+                    self._overwrite_GT_with_GP(obs["GT_c_around_threshold_maps_downsampled"], env_key="_gt_around_downsampled")
                 if self.gp_visualise:
                     local_around = self._get_local_patch(around_belief_3d, ix, iy, iz,
                                                     radius=self.env.unwrapped.patch_radius)
