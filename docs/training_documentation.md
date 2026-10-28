@@ -2,9 +2,9 @@
 
 This file records every training run of the plume agent on Fox: the settings, what changed from the previous run and why, and the results. Use it to see how a parameter change affects training.
 
-- **Run folders:** `../trained_agents/<run>` on this machine. On Fox the training scripts write to `../trained-agents/<run>`.
+- **Run folders:** `../trained-agents/<run>` on this machine. On Fox the training scripts write to `../trained-agents/<run>`.
 - **Run names:** `<ALG>_<tag>_<Slurm job ID>`, set by [fox_train.sh](../fox_train.sh). One `sbatch fox_train.sh <tag>` starts DQN, PPO and SAC as one array job, so all three share the job ID.
-- **Copies in git:** [training_runs/](training_runs/) holds `training_stats.png` and `training_config.json` for each run, and `resume_log.txt` for runs that were resumed after a failed job. The SVG plots, the models and the stats pickles stay in `../trained_agents`.
+- **Copies in git:** [training_runs/](training_runs/) holds `training_stats.png` and `training_config.json` for each run, and `resume_log.txt` for runs that were resumed after a failed job. The SVG plots, the models and the stats pickles stay in `../trained-agents`.
 - **Why the methods are set up the way they are:** [comparing_training_methods.md](comparing_training_methods.md).
 
 ## How to read the results
@@ -12,7 +12,7 @@ This file records every training run of the plume agent on Fox: the settings, wh
 The plots come from [training_data_visualiser.py](../HUGIN_gym/evaluation/training_data_visualiser.py). The numbers tables come from [summarise_training_stats.py](../HUGIN_gym/evaluation/summarise_training_stats.py):
 
 ```bash
-.venv/bin/python -m HUGIN_gym.evaluation.summarise_training_stats ../trained_agents/<run> [<run> ...] --last 1000
+.venv/bin/python -m HUGIN_gym.evaluation.summarise_training_stats ../trained-agents/<run> [<run> ...] --last 1000
 ```
 
 | Metric | Meaning |

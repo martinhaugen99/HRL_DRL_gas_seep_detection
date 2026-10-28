@@ -7,7 +7,7 @@ mean ± std of their run means.
 
 Run from the repository root, e.g.:
     .venv/bin/python -m HUGIN_gym.evaluation.summarise_training_stats \
-        ../trained_agents/*_compare_42235* --last 1000
+        ../trained-agents/*_compare_42235* --last 1000
 """
 
 import argparse
@@ -73,7 +73,7 @@ def main() -> None:
         "run_dirs",
         nargs="+",
         type=Path,
-        help="run folders, e.g. ../trained_agents/DQN_compare_4223550",
+        help="run folders, e.g. ../trained-agents/DQN_compare_4223550",
     )
     parser.add_argument(
         "--last",
