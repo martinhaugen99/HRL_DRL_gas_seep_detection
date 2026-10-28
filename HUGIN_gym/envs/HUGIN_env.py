@@ -117,6 +117,7 @@ class HUGIN(gym.Env):
         self.gaussian_sigma_range = [2.0, 5.0]  # sigma range used when vary_plume_size is on: plumes 5-15 cells wide
         self.spawn_near_plume = False     # start in a box around the plume instead of anywhere on the map (switched on by the PLUME training/test scripts)
         self.spawn_margin = 3             # cells added around the plume's bounding box
+        self.spawn_at_survey_start = False # start in a random corner, heading along an edge into the map, like a lawnmower survey (switched on by the HRL training script)
 
         self.c_around_width = 0.15
         self.get_concentration = self.concentration_function
@@ -488,7 +489,21 @@ class HUGIN(gym.Env):
         self.state["x"] = np.random.randint(x_lo, x_hi + 1)
         self.state["y"] = np.random.randint(y_lo, y_hi + 1)
 
-   
+    def _spawn_at_survey_start(self):
+        """
+        Start in a random corner, heading along one of its two edges into the map, where a lawnmower survey begins.
+        The start does not depend on where the plume is, so a plume can lie near the start by chance.
+        """
+        lim_x = int(self.domain_limit["x"] - 1) # same start limits as the random start in reset()
+        lim_y = int(self.domain_limit["y"] - 1)
+        sign_x, sign_y = np.random.choice([-1, 1], size=2)
+        self.state["x"] = int(sign_x * lim_x)
+        self.state["y"] = int(sign_y * lim_y)
+        heading_along_x = 0.0 if sign_x < 0 else np.pi # +x from the left edge, -x from the right edge
+        heading_along_y = 0.5*np.pi if sign_y < 0 else 1.5*np.pi # +y from the bottom edge, -y from the top edge
+        self.state["theta"] = np.random.choice([heading_along_x, heading_along_y])
+
+
     def reset(self, *, seed=None, options=None,goal_distance=None):
         super().reset(seed=seed)
 
@@ -559,6 +574,8 @@ class HUGIN(gym.Env):
         
         if self.spawn_near_plume and (self.train or self.random_points):
             self._spawn_near_plume() # needs the plume maps above, and must run before anything below reads the start position
+        elif self.spawn_at_survey_start and (self.train or self.random_points):
+            self._spawn_at_survey_start() # must run before anything below reads the start position
         
         if self._3D:
             self.maxN_over_thresh=(np.sum(self.GT_c_over_threshold_maps)+8).astype(np.float32) # careful! only in z plane
