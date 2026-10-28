@@ -126,6 +126,14 @@ class HierarchicalEnv(gym.Env):
             discount *= self.gamma
 
             if done or trunc or self.no_progress_steps>2 or option_length >=self.max_opt_length: #! >1
+                if not (done or trunc) and option_length < self.max_opt_length:
+                    # the meta agent discounts each decision by gamma**MAX_OPT_LENGTH, which is only exact for full-length options
+                    raise RuntimeError(
+                        f"Option ended after {option_length} of {self.max_opt_length} steps while the episode goes on. "
+                        "The meta agent's discount gamma**MAX_OPT_LENGTH needs every such option to run MAX_OPT_LENGTH "
+                        "steps (options end after 3 steps without progress, so use MAX_OPT_LENGTH <= 3), "
+                        "or a discount of gamma**option_length per decision."
+                    )
                 if self.no_progress_steps>2:
                     total_reward-=2.0 # penalty for no progress!
 
