@@ -35,8 +35,8 @@ The plots come from [training_data_visualiser.py](../HUGIN_gym/evaluation/traini
 | 1 | `gp_230steps` | 4218364 | 2026-09-24 22:01 | `f220184` | First runs of all three algorithms on Fox | Finished |
 | 2 | `compare` | 4223550, 4223553, 4223557 | 2026-09-26 13:35–13:49 | `961f7a2` | Same task, budget and network size for all three algorithms; start near the plume; random plume size; less DQN exploration. 3 repeats | Finished |
 | 3 | `compare_100M` | 4259604, 4259607, 4259610; resumed as 4272086, 4272088, 4272091 | 2026-10-04 22:31 – 2026-10-05 05:05 | `10e4023`; resumed with `bf7e7fc` | 10× the steps, 24 envs, 460-step episodes, 128 × 128 networks. 3 repeats | Finished; 8 of 9 runs resumed after a full disk quota |
-| 4 | `untuned` (HRL) | 4363368; resumed twice | 2026-10-28 15:13 | `56ba1c7` | First training of the HRL meta agent, with the settings from the thesis code | Running; hit the 12 h limit twice and was resumed |
-| 5 | `duration`, `duration_mean`, `minimal`, `minimal_values`, `minimal_values_duration` (HRL) | Not submitted yet | – | Not committed yet | The meta agent chooses how many steps a sub-agent runs; smaller meta states; sub-agent value estimates | Planned for 2026-10-29 |
+| 4 | `untuned` (HRL) | 4363368; resumed as 4367840, 4371199 | 2026-10-28 15:13 | `56ba1c7` | First training of the HRL meta agent, with the settings from the thesis code | Running; hit the 12 h limit twice and was resumed |
+| 5 | `minimal`, `minimal_values`, `duration`, `duration_mean`, `minimal_values_duration` (HRL) | 4371279, 4371280, 4371281, 4371282, 4371283 | 2026-10-29 22:58 | `152ba0a` | The meta agent chooses how many steps a sub-agent runs; smaller meta states; sub-agent value estimates | Running |
 
 "Started" is `RUN_INFO.timestamp` in `training_config.json`. "Code" is the last commit before the run started. From run 3 on, it is the commit checked out on Fox when the job started (`git reflog --date=iso` on Fox).
 
@@ -372,9 +372,10 @@ From run 4 on, the runs train the meta agent of the HRL setup. The meta agent (P
 ## Run 4: HRL `untuned` (job 4363368)
 
 - **Goal:** first training of the meta agent, with the settings from the thesis code. It is the baseline for run 5.
-- **Submitted with:** `sbatch fox_train_HRL.sh untuned`, resumed twice with `sbatch fox_train_HRL.sh untuned 4363368`.
-- **Code:** `56ba1c7` (2026-10-28 14:57), the last commit before the start. Not yet checked on Fox with `git reflog`.
+- **Submitted with:** `sbatch fox_train_HRL.sh untuned`, resumed twice with `sbatch fox_train_HRL.sh untuned 4363368` (jobs 4367840 and 4371199).
+- **Code:** `56ba1c7` (2026-10-28 14:57), pulled on Fox at 14:58, for all three jobs. The next pull on Fox was 2026-10-29 22:55, after the last job had started.
 - **Fox resources:** 16 CPUs, 32 GB, 12 h limit.
+- **Failed first submission:** job 4363336 (2026-10-28 14:59) failed after 19 s. The cause was not checked; it is in `slurm-hugin-hrl-4363336.out` on Fox.
 - **Meta agent:** 3 actions, one per sub-agent, and every option runs 3 steps, so an episode has at most 160 decisions. The meta state is 158 inputs, turned into 128 features (ReLU) by `AgentHRLExplore` ([agent0_HRL.py](../HUGIN_gym/agents/feature_extractor/agent0_HRL.py)): the three coverages, position and heading, 7 × 7 patches of the visited map and of the plume and border estimates, and `distance_from_max`. With the GP on, `distance_from_max` is always 1.0.
 - **Status:** running. The third job should finish on 2026-10-30 between about 02:00 and 02:15.
 
@@ -382,13 +383,13 @@ From run 4 on, the runs train the meta agent of the HRL setup. The meta agent (P
 
 The 12 h limit was too short for 10M decisions, so the run needed three jobs. Each job lost the decisions after its last checkpoint: about 1 h in the first job and about 1.5 h in the second.
 
-| Job | Started (from decision) | Last checkpoint | Checkpoint written | Speed |
-|---|---|---|---|---|
-| 4363368 | 2026-10-28 15:13 (0) | 4,099,992 | 2026-10-29 02:16 | about 103 decisions/s |
-| First resume | 2026-10-29 08:57 (4,099,992) | 8,199,984 | 2026-10-29 19:24 | about 109 decisions/s |
-| Second resume | 2026-10-29 21:22 (8,199,984) | – (the next would be 10,249,980) | – | – |
+| Job | Slurm start | Slurm end | State | Starts from decision | Last checkpoint | Checkpoint written | Speed |
+|---|---|---|---|---|---|---|---|
+| 4363368 | 2026-10-28 15:12 | 2026-10-29 03:12 | TIMEOUT | 0 | 4,099,992 | 2026-10-29 02:16 | about 103 decisions/s |
+| 4367840 | 2026-10-29 08:57 | 2026-10-29 20:57 | TIMEOUT | 4,099,992 | 8,199,984 | 2026-10-29 19:24 | about 109 decisions/s |
+| 4371199 | 2026-10-29 21:21 | – | RUNNING | 8,199,984 | – (the next would be 10,249,980) | – | – |
 
-- "Started" is `RUN_INFO.timestamp` in `training_config.json` and the times in `resume_log.txt`. Both are written after the envs are set up, a few minutes after the Slurm start. `resume_log.txt` also has the job IDs of the resumes.
+- The Slurm times come from `sacct`. The run's own start times (`RUN_INFO.timestamp` in `training_config.json` and the times in `resume_log.txt`) are about 30 s later, after the envs are set up. The speeds are measured from those times.
 - 10M decisions take about 26–27 h, so `fox_train_HRL.sh` now asks for 30 h.
 
 ### Learning curve so far
@@ -436,19 +437,29 @@ From `episode_stats_8199984.pkl` (61,967 episodes up to 8.2M decisions), split i
 - **Goal:** test two questions from the project supervisor.
   1. Can the meta agent learn how long to use a sub-agent in different situations? It chooses between a 2-step and a 5-step variant of each sub-agent. We hope to see it choose the 5-step space exploration early in the survey.
   2. How little information does the meta agent need? The meta state goes from 158 inputs to 6 numbers, with and without each sub-agent's own estimate of how well it will do.
-- **Submitted with:**
+- **Submitted:** 2026-10-29 22:58, all five at once. All five started at 22:58:04 (`sacct`), while the last job of run 4 was still running.
 
-  ```bash
-  sbatch fox_train_HRL.sh minimal
-  sbatch fox_train_HRL.sh minimal_values
-  sbatch --time=2-06:00:00 fox_train_HRL.sh duration
-  sbatch --time=2-06:00:00 fox_train_HRL.sh duration_mean
-  sbatch --time=2-06:00:00 fox_train_HRL.sh minimal_values_duration
-  ```
+  | Tag | Job | Submitted with | Run folder | Started (`RUN_INFO.timestamp`) |
+  |---|---|---|---|---|
+  | `minimal` | 4371279 | `sbatch fox_train_HRL.sh minimal` | `HRL_PPO_minimal_4371279` | 2026-10-29 22:58:23 |
+  | `minimal_values` | 4371280 | `sbatch fox_train_HRL.sh minimal_values` | `HRL_PPO_minimal_values_4371280` | 2026-10-29 22:58:39 |
+  | `duration` | 4371281 | `sbatch --time=2-06:00:00 fox_train_HRL.sh duration` | `HRL_PPO_duration_4371281` | 2026-10-29 22:58:39 |
+  | `duration_mean` | 4371282 | `sbatch --time=2-06:00:00 fox_train_HRL.sh duration_mean` | `HRL_PPO_duration_mean_4371282` | 2026-10-29 22:58:39 |
+  | `minimal_values_duration` | 4371283 | `sbatch --time=2-06:00:00 fox_train_HRL.sh minimal_values_duration` | `HRL_PPO_minimal_values_duration_4371283` | 2026-10-29 22:58:39 |
 
-- **Code:** not committed yet. Note the commit at submission.
+- **Code:** `152ba0a` (2026-10-29 22:54), pulled on Fox at 22:55. The code changes are in the four commits before it (`92c4352`, `af15f11`, `36c770f`, `28d07d3`). `152ba0a` itself only adds this documentation.
 - **Fox resources:** 16 CPUs, 32 GB per run. 30 h limit for the 3-step variants. 54 h for the duration variants, because their 10M decisions can be up to 50M AUV steps.
-- **Status:** not submitted yet.
+- **Status:** running. At the speed of run 4, the 3-step variants should finish around 2026-10-31 02:00. The duration variants need 18–45 h, depending on how often they choose 5 steps, so they finish between about 2026-10-30 17:00 and 2026-11-01 20:00.
+
+### In short: what each variant does
+
+All variants use the same sub-agents, map, survey start, 480-step survey budget and goals as run 4 (`untuned`). Only the meta agent changes.
+
+- **`minimal`:** as `untuned`, but the meta agent sees only 6 numbers. They are: how much of the survey time is used, how much of the map, the plume and the plume border is covered, whether a plume has been found, and how uncertain the GP map still is. *Question:* is that enough to choose the sub-agents well, and does it learn in fewer decisions?
+- **`minimal_values`:** as `minimal`, plus each sub-agent's own estimate of how well it would do if chosen now. *Question:* can these estimates stand in for the local maps that `minimal` leaves out?
+- **`duration`:** as `untuned`, but each choice also sets how long the sub-agent runs: 2 or 5 steps. A small cost per choice makes the long variant pay off when it does as well as two short ones. *Question:* does the meta agent learn when to commit for longer, for example long space exploration early in the survey?
+- **`duration_mean`:** as `duration`, but a choice is rewarded with the average of its step rewards, as the supervisor suggested. *Question:* does averaging bias the choice of length? We expect it to favor 5 steps whatever the situation.
+- **`minimal_values_duration`:** both ideas together: the 6 numbers and the sub-agent estimates, and the choice of 2 or 5 steps.
 
 ### The variants
 
