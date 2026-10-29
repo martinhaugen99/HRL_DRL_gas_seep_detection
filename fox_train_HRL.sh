@@ -1,7 +1,10 @@
 #!/bin/bash
 # Fox (UiO) Slurm job: trains the HRL meta agent with PPO, on top of the trained space, plume and border agents.
 # The sub-agent models are read from the paths in HUGIN_gym/training/train_HRL(ppo).py (../trained-agents/...).
-# Submit from the repository root:   sbatch fox_train_HRL.sh <tag>        e.g. sbatch fox_train_HRL.sh untuned
+# The tag is the meta agent variant: a key of PRESETS in train_HRL(ppo).py (untuned, duration, duration_mean,
+# minimal, minimal_values, minimal_values_duration).
+# Submit from the repository root:   sbatch fox_train_HRL.sh <tag>        e.g. sbatch fox_train_HRL.sh minimal
+# The duration variants can run up to 5/3 as many env steps: sbatch --time=2-06:00:00 fox_train_HRL.sh duration
 # Resume a run from its newest checkpoint: sbatch fox_train_HRL.sh <tag> <job id of the run>
 #                                    e.g. sbatch fox_train_HRL.sh untuned 4300000
 # The run is saved as ../trained-agents/HRL_PPO_<tag>_<job id>; the job id makes every submission unique.
@@ -11,7 +14,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16           # 12 env workers + the main process, with headroom
 #SBATCH --mem-per-cpu=2G             # 32 GiB; every env worker holds the three sub-agent models and its own GP
-#SBATCH --time=12:00:00              # checkpoints (every ~2M steps) survive if the limit is hit
+#SBATCH --time=1-06:00:00            # 10M steps of untuned took about 27 h; checkpoints (every ~2M steps) survive if the limit is hit
 #SBATCH --output=slurm-%x-%j.out
 
 set -o errexit
@@ -36,4 +39,4 @@ else
     RESUME_FLAG=""
 fi
 
-$PY -m "HUGIN_gym.training.train_HRL(ppo)" --name "$RUN" $RESUME_FLAG
+$PY -m "HUGIN_gym.training.train_HRL(ppo)" --preset "$TAG" --name "$RUN" $RESUME_FLAG

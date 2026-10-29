@@ -106,12 +106,14 @@ def build_training_config_ppo(
     MAX_OPT_LENGTH=None,
     MULTIPLE_GAUSSIANS=None,
     sub_policy_metadata=None,
+    hrl_variant=None,
 ):
     """
     Build a dictionary with all training configuration and hyperparameters
     for a PPO model (Stable-Baselines3).
 
     Usage: call this instead of build_training_config when training PPO.
+    hrl_variant: settings of the HRL meta agent variant (preset), stored under HRL_VARIANT.
     """
     # Handle possible schedule functions: store repr instead of callable
     def _as_serializable(value):
@@ -166,6 +168,9 @@ def build_training_config_ppo(
 
     if sub_policy_metadata is not None:
         training_config["SUB_POLICIES"] = sub_policy_metadata
+
+    if hrl_variant is not None:
+        training_config["HRL_VARIANT"] = hrl_variant
 
     os.makedirs(saving_location, exist_ok=True)
     config_path = os.path.join(saving_location, "training_config.txt")
