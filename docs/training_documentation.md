@@ -1,6 +1,6 @@
 # Documentation of the different training runs
 
-This file records every training run of the plume agent on Fox: the settings, what changed from the previous run and why, and the results. Use it to see how a parameter change affects training.
+This file records every training run on Fox: the plume agent in runs 1–3 and the HRL meta agent from run 4 on (see [HRL meta agent](#hrl-meta-agent)). For each run it gives the settings, what changed from the previous run and why, and the results. Use it to see how a parameter change affects training.
 
 - **Run folders:** `../trained-agents/<run>` on this machine. On Fox the training scripts write to `../trained-agents/<run>`.
 - **Run names:** `<ALG>_<tag>_<Slurm job ID>`, set by [fox_train.sh](../fox_train.sh). One `sbatch fox_train.sh <tag>` starts DQN, PPO and SAC as one array job, so all three share the job ID.
@@ -35,10 +35,12 @@ The plots come from [training_data_visualiser.py](../HUGIN_gym/evaluation/traini
 | 1 | `gp_230steps` | 4218364 | 2026-09-24 22:01 | `f220184` | First runs of all three algorithms on Fox | Finished |
 | 2 | `compare` | 4223550, 4223553, 4223557 | 2026-09-26 13:35–13:49 | `961f7a2` | Same task, budget and network size for all three algorithms; start near the plume; random plume size; less DQN exploration. 3 repeats | Finished |
 | 3 | `compare_100M` | 4259604, 4259607, 4259610; resumed as 4272086, 4272088, 4272091 | 2026-10-04 22:31 – 2026-10-05 05:05 | `10e4023`; resumed with `bf7e7fc` | 10× the steps, 24 envs, 460-step episodes, 128 × 128 networks. 3 repeats | Finished; 8 of 9 runs resumed after a full disk quota |
+| 4 | `untuned` (HRL) | 4363368; resumed twice | 2026-10-28 15:13 | `56ba1c7` | First training of the HRL meta agent, with the settings from the thesis code | Running; hit the 12 h limit twice and was resumed |
+| 5 | `duration`, `duration_mean`, `minimal`, `minimal_values`, `minimal_values_duration` (HRL) | Not submitted yet | – | Not committed yet | The meta agent chooses how many steps a sub-agent runs; smaller meta states; sub-agent value estimates | Planned for 2026-10-29 |
 
 "Started" is `RUN_INFO.timestamp` in `training_config.json`. "Code" is the last commit before the run started. From run 3 on, it is the commit checked out on Fox when the job started (`git reflog --date=iso` on Fox).
 
-## Settings shared by all runs
+## Settings shared by runs 1–3 (plume agent)
 
 - **Agent:** plume agent (`AGENT_TYPE = "PLUME"`) with the feature extractor `AgentPlumeExplore` ([agent2_plume_explore.py](../HUGIN_gym/agents/feature_extractor/agent2_plume_explore.py)). It turns 108 inputs into 128 features (ReLU): plume and map coverage, position and heading, a 7 × 7 visited patch, a 7 × 7 plume patch, and the distance from the maximum. The hidden layers after it differ per run (see the tables).
 - **Observation keys:** DQN and SAC keep 7 keys (`obs_state`, `visited_maps_downsampled`, `GT_c_over_threshold_maps_downsampled`, `local_GT`, `plume_coverage`, `space_coverage`, `distance_from_max`); PPO keeps 5 (without the two downsampled maps). The feature extractor does not read the downsampled maps, so all three get the same inputs.
@@ -340,10 +342,210 @@ Mean ± std over the last 1,000 training episodes of each run:
 - **Resume:** `DQN_compare_100M_4259604` shows a dip in the reward and a rise in the episode length near episode 250k, close to where it resumed (episode 247,716). The DQN curves have similar dips elsewhere, so the plots alone do not show whether the empty replay buffer caused it. The SAC plots show no clear change where the runs resumed (episodes 258k–314k).
 - **Wall-clock time:** PPO was the fastest, and the only algorithm with a run that finished in one job (20.2 h for 100M steps). In the about 24 h before the failure, the first jobs reached 60–70M steps for DQN and 40–50M for SAC.
 
+## HRL meta agent
+
+From run 4 on, the runs train the meta agent of the HRL setup. The meta agent (PPO) chooses which of three trained sub-agents moves the AUV next, and the chosen sub-agent then runs a few steps (an option). The sub-agents are frozen and act deterministically.
+
+### Settings shared by the HRL runs
+
+- **Script:** [train_HRL(ppo).py](<../HUGIN_gym/training/train_HRL(ppo).py>), submitted with [fox_train_HRL.sh](../fox_train_HRL.sh) as `sbatch fox_train_HRL.sh <tag>`. From run 5 on, the tag also selects the meta agent variant (`PRESETS` in the script). The runs are saved as `../trained-agents/HRL_PPO_<tag>_<job ID>`.
+- **Sub-agents:**
+
+  | Sub-agent | Model | Observation keys |
+  |---|---|---|
+  | Space exploration | `../trained-agents/PPO_space_30M` | `obs_state`, `visited_maps_downsampled`, `space_coverage` |
+  | Plume | `../trained-agents/PPO_compare_100M_4259607` (run 3) | `obs_state`, `local_GT`, `plume_coverage`, `space_coverage`, `distance_from_max` |
+  | Border | `../trained-agents/PPO_border_4280885` | `obs_state`, `local_GT_around`, `border_coverage`, `space_coverage`, `distance_from_max` |
+
+- **Environment:** the 41 × 41 map of runs 1–3 with one Gaussian source, σ random in [2.0, 5.0]. The AUV starts in a random corner, heading along an edge into the map, like a lawnmower survey (`spawn_at_survey_start`). GP on (RBF, length scale 3.5): the meta agent and the sub-agents only see the GP's estimate of the plume, never the true plume.
+- **Survey budget:** 480 AUV steps per episode.
+- **Goals:** accuracy goals [0.9, 0.9, 0.9].
+- **Meta reward** ([HRL_env.py](../HUGIN_gym/envs/HRL_env.py), [GPWrapper.py](../HUGIN_gym/envs/wrappers/GPWrapper.py)), summed over the steps of an option and discounted by 0.998 per step:
+  - −1 per step, plus a reward for new cells that depends on the chosen sub-agent. Space exploration gets (new visited cells) / 6, but only while the plume and border estimates are at least 90 % covered and no new plume or border cells are found. Plume and border get (new border cells + new visited cells) / 6 when they find new border cells, otherwise (new visited cells) / 12.
+  - +40 once per plume when the estimated plume and border are both at least 90 % covered.
+  - +40 and the episode ends when the mean GP standard deviation over the map is 0.1 or lower and both coverages are at least 90 %.
+  - −4 instead of the step reward when the AUV tries to leave the map, and −2 when an option ends after 3 steps without new cells.
+- **Meta agent (PPO):** 12 parallel envs, `n_steps` 512, `batch_size` 1024, `n_epochs` 4, `learning_rate` 3e-4, `gae_lambda` 0.95, `clip_range` 0.2, `ent_coef` 0.01, `vf_coef` 0.5, `max_grad_norm` 0.5, hidden layers pi [64, 64] and vf [64, 64] Tanh (SB3 default). `gamma` 0.998 per AUV step, which is 0.998³ ≈ 0.994 per 3-step decision. 10M decisions, with a checkpoint and a stats snapshot every 2,049,996 decisions.
+- **Fox:** 16 CPUs, 2 GB per CPU (32 GB). Run 4 made about 106 decisions per second.
+- **Counting:** the meta agent's step count, the episode length in the stats and `rollout/ep_len_mean` count meta decisions, not AUV steps.
+
+## Run 4: HRL `untuned` (job 4363368)
+
+- **Goal:** first training of the meta agent, with the settings from the thesis code. It is the baseline for run 5.
+- **Submitted with:** `sbatch fox_train_HRL.sh untuned`, resumed twice with `sbatch fox_train_HRL.sh untuned 4363368`.
+- **Code:** `56ba1c7` (2026-10-28 14:57), the last commit before the start. Not yet checked on Fox with `git reflog`.
+- **Fox resources:** 16 CPUs, 32 GB, 12 h limit.
+- **Meta agent:** 3 actions, one per sub-agent, and every option runs 3 steps, so an episode has at most 160 decisions. The meta state is 158 inputs, turned into 128 features (ReLU) by `AgentHRLExplore` ([agent0_HRL.py](../HUGIN_gym/agents/feature_extractor/agent0_HRL.py)): the three coverages, position and heading, 7 × 7 patches of the visited map and of the plume and border estimates, and `distance_from_max`. With the GP on, `distance_from_max` is always 1.0.
+- **Status:** running. The third job should finish on 2026-10-30 between about 02:00 and 02:15.
+
+### Time limit and resumes
+
+The 12 h limit was too short for 10M decisions, so the run needed three jobs. Each job lost the decisions after its last checkpoint: about 1 h in the first job and about 1.5 h in the second.
+
+| Job | Started (from decision) | Last checkpoint | Checkpoint written | Speed |
+|---|---|---|---|---|
+| 4363368 | 2026-10-28 15:13 (0) | 4,099,992 | 2026-10-29 02:16 | about 103 decisions/s |
+| First resume | 2026-10-29 08:57 (4,099,992) | 8,199,984 | 2026-10-29 19:24 | about 109 decisions/s |
+| Second resume | 2026-10-29 21:22 (8,199,984) | – (the next would be 10,249,980) | – | – |
+
+- "Started" is `RUN_INFO.timestamp` in `training_config.json` and the times in `resume_log.txt`. Both are written after the envs are set up, a few minutes after the Slurm start. `resume_log.txt` also has the job IDs of the resumes.
+- 10M decisions take about 26–27 h, so `fox_train_HRL.sh` now asks for 30 h.
+
+### Learning curve so far
+
+From `episode_stats_8199984.pkl` (61,967 episodes up to 8.2M decisions), split into 20 groups of equal size, in order. "Plume coverage" is the true coverage. It is missing for some episodes, so its groups line up only roughly with the decisions.
+
+| Up to decision | Total reward | Episode length (decisions) | Ended early (%) | Visited (%) | Plume coverage (%) |
+|---|---|---|---|---|---|
+| 449,651 | -376.1 | 145.1 | 49.6 | 79.4 | 88.6 |
+| 895,296 | -362.0 | 143.8 | 54.6 | 79.8 | 89.1 |
+| 1,325,036 | -332.9 | 138.7 | 60.3 | 81.6 | 89.8 |
+| 1,732,379 | -288.1 | 131.4 | 75.7 | 83.5 | 92.1 |
+| 2,136,361 | -296.0 | 130.4 | 80.9 | 87.4 | 92.3 |
+| 2,542,129 | -304.1 | 130.9 | 78.9 | 87.3 | 92.2 |
+| 2,948,584 | -303.9 | 131.2 | 79.3 | 87.3 | 92.0 |
+| 3,353,915 | -304.1 | 130.8 | 79.8 | 87.3 | 92.2 |
+| 3,761,757 | -306.7 | 131.6 | 77.8 | 87.5 | 92.2 |
+| 4,168,793 | -307.6 | 131.4 | 78.0 | 87.2 | 91.9 |
+| 4,576,638 | -310.7 | 131.6 | 76.9 | 87.3 | 92.0 |
+| 4,980,678 | -302.4 | 130.4 | 79.7 | 87.1 | 92.3 |
+| 5,387,546 | -307.7 | 131.3 | 77.5 | 87.0 | 92.0 |
+| 5,799,114 | -313.7 | 132.8 | 71.7 | 85.9 | 91.3 |
+| 6,210,692 | -277.0 | 132.9 | 70.7 | 80.2 | 92.0 |
+| 6,617,401 | -246.5 | 131.3 | 75.8 | 78.1 | 93.4 |
+| 7,019,434 | -231.7 | 129.8 | 77.9 | 78.0 | 94.6 |
+| 7,417,298 | -219.6 | 128.4 | 79.3 | 77.9 | 95.2 |
+| 7,809,406 | -202.5 | 126.6 | 82.0 | 77.9 | 95.3 |
+| 8,198,391 | -193.8 | 125.6 | 83.8 | 77.3 | 95.6 |
+
+"Ended early" means the episode reached the termination goal before the limit of 160 decisions.
+
+### Observations so far
+
+- **Three phases:**
+  - Up to about 2M decisions, fast improvement: the reward goes from −376 to −296, and the share that ends early from 50 % to 81 %.
+  - From 2M to 5.8M, flat at about −305.
+  - From about 5.8M, a second improvement that is still going at 8.2M: the reward goes from −314 to −194, ended early from 72 % to 84 %, and the plume coverage from 92 % to 95.6 %.
+- **Less of the map visited:** in the second improvement the visited share drops from 87 % to 77 %. The agent reaches the termination goal with less of the map visited.
+- **Run length:** a run of 5M decisions would have stopped in the flat phase. Run 5 therefore also uses 10M decisions.
+- **Resume:** the second improvement starts at about 5.8M, not at the resume at 4.1M.
+- **Results after 10M decisions:** to be added when the run has finished.
+
+## Run 5: HRL meta agent variants
+
+- **Goal:** test two questions from the project supervisor.
+  1. Can the meta agent learn how long to use a sub-agent in different situations? It chooses between a 2-step and a 5-step variant of each sub-agent. We hope to see it choose the 5-step space exploration early in the survey.
+  2. How little information does the meta agent need? The meta state goes from 158 inputs to 6 numbers, with and without each sub-agent's own estimate of how well it will do.
+- **Submitted with:**
+
+  ```bash
+  sbatch fox_train_HRL.sh minimal
+  sbatch fox_train_HRL.sh minimal_values
+  sbatch --time=2-06:00:00 fox_train_HRL.sh duration
+  sbatch --time=2-06:00:00 fox_train_HRL.sh duration_mean
+  sbatch --time=2-06:00:00 fox_train_HRL.sh minimal_values_duration
+  ```
+
+- **Code:** not committed yet. Note the commit at submission.
+- **Fox resources:** 16 CPUs, 32 GB per run. 30 h limit for the 3-step variants. 54 h for the duration variants, because their 10M decisions can be up to 50M AUV steps.
+- **Status:** not submitted yet.
+
+### The variants
+
+| Tag | Actions | Reward per decision | Discount per decision | Cost per decision | Meta state |
+|---|---|---|---|---|---|
+| `untuned` (run 4) | 3 sub-agents × 3 steps | Sum of the step rewards | 0.998³ | 0 | Full (158 inputs) |
+| `duration` | 3 sub-agents × {2, 5} steps | Sum | 0.998^k, k = steps run | 0.1 | Full |
+| `duration_mean` | 3 sub-agents × {2, 5} steps | Mean of the step rewards; bonuses and penalties in full | 0.998³ | 0.1 | Full |
+| `minimal` | 3 sub-agents × 3 steps | Sum | 0.998³ | 0 | Minimal (6 numbers) |
+| `minimal_values` | 3 sub-agents × 3 steps | Sum | 0.998³ | 0 | Minimal + 3 sub-agent values |
+| `minimal_values_duration` | 3 sub-agents × {2, 5} steps | Sum | 0.998^k | 0.1 | Minimal + 3 sub-agent values |
+
+Each comparison changes one thing:
+
+| Compare | To see the effect of |
+|---|---|
+| `duration` with `untuned` | Choosing the option length |
+| `duration_mean` with `duration` | The mean reward suggested by the supervisor, against the sum with a discount per decision |
+| `minimal` with `untuned` | The small meta state |
+| `minimal_values` with `minimal` | The sub-agent values |
+| `minimal_values_duration` with `minimal_values` and `duration` | Both ideas together |
+
+### Choosing the option length (`duration`, `duration_mean`, `minimal_values_duration`)
+
+- **Actions:** 6, one per sub-agent and length: `space_2`, `space_5`, `plume_2`, `plume_5`, `border_2`, `border_5`. An option still ends after 3 steps without new cells (−2), so a 5-step option can stop after 3 steps.
+- **Survey budget in AUV steps:** the episode ends after 480 AUV steps, not after a number of decisions. Otherwise the 5-step variants would give a longer survey, and the agent would prefer them for that reason alone. The decision limit is 240 (480 / 2), so it never ends an episode first.
+- **Sum and discount per decision (`duration`, `minimal_values_duration`):** a 5-step decision covers more time than a 2-step decision. Its step rewards are summed, and the next decision is discounted by 0.998⁵ instead of 0.998². This is the semi-MDP form of the options framework (Sutton, Precup and Singh, 1999). A 2-step and a 5-step choice are then compared over the same time, and the reward scale favors neither.
+  - SB3's PPO uses one discount for every step. These runs use `SMDPDictRolloutBuffer` ([smdp_rollout_buffer.py](../HUGIN_gym/agents/smdp_rollout_buffer.py)), which gets the discount of each decision from the env through `SMDPDiscountCallback`.
+  - One small approximation remains. When an episode hits the step limit, SB3 bootstraps it with 0.998³ instead of the last decision's own discount. The difference is below 1 %.
+- **Cost per decision (0.1):** this is the "slightly higher reward for the variant with more actions". A 5-step option makes fewer decisions, so it pays less cost per AUV step. 0.1 is 10 % of the time penalty of one step. Harb et al. (2018) call this a deliberation cost.
+- **Mean reward (`duration_mean`):** the supervisor's suggestion. The step rewards are averaged over the option, so that the 5-step variant does not win by adding up more rewards. The bonuses and penalties count in full, and every decision has the same discount, 0.998³.
+  - The episode's return is still a sum over decisions, and long options make fewer decisions.
+  - When the step rewards are mostly negative, fewer decisions give a less negative return, whatever the situation. In run 4 the reward averages about −0.5 per AUV step (−194 per episode of about 377 steps at 8.2M).
+  - We therefore expect `duration_mean` to choose the 5-step variants more often than `duration`. The run tests this.
+- **Related methods:** choosing an action together with how long to repeat it is also used in Dynamic Action Repetition (Lakshminarayanan, Sharma and Ravindran, 2017) and FiGAR (Sharma, Lakshminarayanan and Ravindran, 2017).
+
+### Minimal meta states (`minimal`, `minimal_values`, `minimal_values_duration`)
+
+| Input | Meaning |
+|---|---|
+| `time_used` | Share of the 480-step survey used |
+| `space_coverage` | Share of the map visited |
+| `plume_coverage` | Share of the estimated plume visited |
+| `border_coverage` | Share of the estimated plume border visited |
+| `plume_found` | 1 when the GP estimate holds a plume, otherwise 0 |
+| `gp_uncertainty` | Mean GP standard deviation over the map. The termination goal needs 0.1 or lower |
+
+- **Why `plume_found`:** before a plume is found, the plume and border estimates only hold the four corner cells, which count as visited. The coverages then show 1.0, the same value as a fully covered plume.
+- **Why `time_used`:** the run 4 meta state has no time input, although the episodes have a fixed limit.
+- **Sub-agent values (`minimal_values`, `minimal_values_duration`):** each sub-agent's own PPO critic estimates its expected return if it is chosen now. The three values are scaled with symlog, sign(v) · log(1 + |v|), because the sub-agents have different reward scales. The critics learned in the sub-agents' own training situations, for example the plume agent always started near the plume. So the values may be off in a full survey, which these runs also show.
+- **Network:** SB3's default for dict observations, which concatenates the inputs, followed by [64, 64] Tanh. `AgentHRLExplore` is not used.
+- **Expected effect:** fewer decisions needed to learn, not faster decisions. Most of the time per decision most likely goes to the GP update after every AUV step and to the three sub-agents, not to the meta network. This has not been profiled.
+
+### Changes for all HRL runs from run 5 on
+
+| Change | Why |
+|---|---|
+| The tag selects the variant (`--preset`) | One job script for all variants |
+| The survey budget is counted in AUV steps (480) | Needed for the duration variants. For 3-step options it ends the episode at 160 decisions, as in run 4 |
+| `VecMonitor` | `rollout/ep_rew_mean` and `rollout/ep_len_mean` in TensorBoard |
+| `OptionUsageCallback` ([OptionUsageCallback.py](../HUGIN_gym/callbacks/OptionUsageCallback.py)) | The meta agent's choices per survey phase in TensorBoard |
+| `HRL_VARIANT` in `training_config.json` | Records the variant settings |
+| 30 h limit in `fox_train_HRL.sh` (was 12 h) | 10M decisions take about 27 h |
+
+### How to compare the variants
+
+- **TensorBoard** (`tensorboard --logdir ../trained-agents`), logged once per PPO update:
+
+  | Tag | Meaning |
+  |---|---|
+  | `hrl_choice_early/<action>`, `hrl_choice_middle/<action>`, `hrl_choice_late/<action>` | Share of the decisions in the first, middle and last third of the survey that chose the action |
+  | `hrl/option_length` | Mean AUV steps per decision |
+  | `hrl/episode_steps` | Mean AUV steps of the episodes that ended during the update |
+  | `hrl/ended_early` | Share of those episodes that reached the termination goal |
+  | `rollout/ep_rew_mean`, `rollout/ep_len_mean` | Mean reward and decisions of the last 100 episodes |
+
+- **Do not compare the reward between variants.** The cost per decision and the mean reward change its scale. Compare `hrl/ended_early`, `hrl/episode_steps`, and the visited and plume coverage from the stats.
+- **Episode length:** it counts decisions, and in the duration variants a decision is 2–5 AUV steps, so use `hrl/episode_steps`. For the same reason, "Ended early" from `summarise_training_stats.py` (length below the decision limit) is wrong for the duration variants. Use `hrl/ended_early`.
+- **The x-axis in TensorBoard counts decisions.** The duration variants make fewer decisions per AUV step, and `hrl/option_length` converts between the two.
+- **One run per variant:** a difference smaller than the spread between repeats cannot be trusted. Repeat the promising variants with 2–3 runs.
+- **Do not stop a run because its curve is flat.** Run 4 was flat for almost 4M decisions before it improved again.
+
+### Results
+
+To be added when the runs have finished.
+
+### References
+
+- Harb, J., Bacon, P.-L., Klissarov, M. and Precup, D. (2018). When waiting is not an option: learning options with a deliberation cost. *AAAI Conference on Artificial Intelligence*.
+- Lakshminarayanan, A. S., Sharma, S. and Ravindran, B. (2017). Dynamic action repetition for deep reinforcement learning. *AAAI Conference on Artificial Intelligence*.
+- Sharma, S., Lakshminarayanan, A. S. and Ravindran, B. (2017). Learning to repeat: fine grained action repetition for deep reinforcement learning. *International Conference on Learning Representations (ICLR)*.
+- Sutton, R. S., Precup, D. and Singh, S. (1999). Between MDPs and semi-MDPs: a framework for temporal abstraction in reinforcement learning. *Artificial Intelligence*, 112(1–2), 181–211.
+
 ## Adding a new run
 
-1. Before submitting: commit the changes and note the commit. Submit with `sbatch fox_train.sh <tag>` and note the job ID(s).
+1. Before submitting: commit the changes and note the commit. Submit with `sbatch fox_train.sh <tag>` (HRL: `sbatch fox_train_HRL.sh <tag>`) and note the job ID(s).
 2. Add a row to the overview table and a section with the goal, what changed (with commits and why), the settings tables and the Fox resources.
-3. If a job fails: find the cause in `slurm-hugin-plume-<job ID>_<array index>.out` on Fox. Resume the runs from their newest checkpoint with `sbatch fox_train.sh <tag> <job ID>` (add `--array=...` to resume only some algorithms) and note the resume job IDs. Get the start, end and elapsed times with `sacct -j <job IDs> --format=JobID,Start,End,Elapsed,State`.
+3. If a job fails: find the cause in `slurm-hugin-plume-<job ID>_<array index>.out` on Fox (HRL: `slurm-hugin-hrl-<job ID>.out`). Resume the runs from their newest checkpoint with `sbatch fox_train.sh <tag> <job ID>` (add `--array=...` to resume only some algorithms) and note the resume job IDs. Get the start, end and elapsed times with `sacct -j <job IDs> --format=JobID,Start,End,Elapsed,State`.
 4. After downloading: make the plot with [training_data_visualiser.py](../HUGIN_gym/evaluation/training_data_visualiser.py). Copy `training_stats.png`, `training_config.json` and, for a resumed run, `resume_log.txt` to `docs/training_runs/<run>/`. Run [summarise_training_stats.py](../HUGIN_gym/evaluation/summarise_training_stats.py) for the numbers table.
 5. Write down what the curves and the numbers show.
