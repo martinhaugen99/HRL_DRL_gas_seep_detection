@@ -288,12 +288,16 @@ def run_episode_hrl(
     gp_visualise=None,
     GP=True,
     verbose = False,
-    VISUALISE=False
+    VISUALISE=False,
+    deterministic: bool = True,
+    pause_at_end: bool = False,
 ):
     """
     HRL rollout:
     - model selects OPTIONS
     - env executes them internally
+    deterministic: the meta agent takes its most likely action (True) or samples it, as in training (False)
+    pause_at_end: wait for Enter before the Meshcat view is cleared at the end of the episode
     """
     if GP:
         env.base_envHUGIN = env.base_env.unwrapped # just make the base_env accessible due to the GP wrapper which adds an additional layer agent->HierarchicalEnv->GPWrapper->HUGINEnv
@@ -315,6 +319,7 @@ def run_episode_hrl(
     step_count = 0
     episode_turns = 0
     base_env_step_count = 0
+    actions = [] # the meta actions in order, e.g. to count how often each sub-agent is chosen
     env.base_env.option_length = 0
     # ---- optional GT snapshot ----
     if gp_visualise is not None:
@@ -335,10 +340,11 @@ def run_episode_hrl(
     while True:
 
         # ---- NO FILTERING (HRL safer) ----
-        action, _ = model.predict(obs, deterministic=True)
+        action, _ = model.predict(obs, deterministic=deterministic)
 
        # print(f"Chosen Option: {action}")
 
+        actions.append(int(action))
         obs, reward, terminated, truncated, info = env.step(int(action))
         env.base_env.option_length +=1
         # try:
@@ -372,28 +378,24 @@ def run_episode_hrl(
                 print(f"GP visualisation failed: {e}")
 
         # ---- VISUAL ----
-        if vis_state_space[0] or VISUALISE:
+        if (vis_state_space[0] or VISUALISE) and not env.visualise_env: # with visualise_env, the env draws every AUV step itself
             env.base_envHUGIN.step_sim()
             #time.sleep(0.1)
 
         # ---- TERMINATION ----
         if terminated or truncated or step_count >= max_eps_len:
 
-            if not env.base_envHUGIN.unwrapped.train and verbose:
-                if terminated:
-                    print("✅ reached goal")
-                else:
-                    print("❌ max steps reached")
-
-            if vis_state_space[0] or VISUALISE:
-                env.base_envHUGIN.renderer.reset()
-            
             if verbose:
-                print(f"Episode finished in {step_count} steps")
+                print("✅ reached goal" if terminated else "❌ survey budget used up")
+                print(f"Episode finished after {step_count} decisions and {base_env_step_count} AUV steps")
                 print(f"Total reward: {episode_reward:.2f}")
                 print(f"Final coverage - SPACE: {obs['space_coverage'][0]*100:.2f}%, PLUME: {obs['plume_coverage'][0]*100:.2f}%, BORDER: {obs['border_coverage'][0]*100:.2f}%")
-                print("Episode ended, resetting...")
-            
+
+            if vis_state_space[0] or VISUALISE:
+                if pause_at_end:
+                    input("Episode done. Press Enter for the next episode...")
+                env.base_envHUGIN.renderer.reset()
+
             return {
                 "space_coverage": obs["space_coverage"][0],
                 "plume_coverage": obs["plume_coverage"][0],
@@ -402,11 +404,12 @@ def run_episode_hrl(
                 "episode_turns":  env.turn_counter,
                 "base_env_steps": base_env_step_count,
                 "options_chosen": step_count,
+                "actions": actions,
                 "terminated": terminated,
                 "info": info,
             }
 
-        
+
 
 def manual_rollout_hrl(
     env,
