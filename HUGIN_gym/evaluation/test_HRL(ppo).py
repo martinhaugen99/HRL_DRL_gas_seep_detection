@@ -22,10 +22,12 @@ from HUGIN_gym.envs.core.visualisation.MapVisualiser import MapVisualiser, visua
 from HUGIN_gym.envs.core.visualisation.visualise_heatmap import HeatmapVisualiser, CNN
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
 from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
-from HUGIN_gym.utils.io import load_training_config_from_model
+from HUGIN_gym.utils.io import hrl_variant_from_config, load_training_config_from_model
 from HUGIN_gym.evaluation.rollout import run_episode_hrl, manual_rollout_hrl,run_episodes_hrl_vec
 
+from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv
+from tqdm import tqdm
 
 # class CNN(nn.Module):
 #     def __init__(self):
@@ -41,7 +43,12 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 # ENV CREATION
 # =========================================================
 
-def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MULTIPLE_GAUSSIANS=None, MAX_OPT_LENGTH =None,ACCURACY_GOALS=None):
+def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MULTIPLE_GAUSSIANS=None, MAX_OPT_LENGTH =None,ACCURACY_GOALS=None,
+                  SURVEY_STEPS=None, VARIANT=None):
+    """
+    SURVEY_STEPS: survey budget in AUV steps, which ends the episode (None: no budget)
+    VARIANT: the meta agent variant, i.e. the HierarchicalEnv settings of a preset in train_HRL(ppo).py (None: one option length, MAX_OPT_LENGTH)
+    """
 
     base_env = gym.make(
         "HUGIN-v0",
@@ -55,6 +62,8 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
     base_env.agent_type ="META"
     base_env.HRL = True # if False we can get the base rewards and overwrite them, but still get the 40/-4 filtering
     base_env.multiple_gaussians = [1,1] if MULTIPLE_GAUSSIANS is None else MULTIPLE_GAUSSIANS # default = [1,1] , it defines the range, e.g. [1,5] would cause from 1 up to 5 gaussian sources within the volume at the same time
+    base_env.spawn_at_survey_start = True  # start in a corner like a survey, as in the HRL training
+    base_env.vary_plume_size = True  # sigma from [2.0, 5.0], as in the HRL training
 
      # ---- GP WRAPPER HERE ----
     if GP:
@@ -83,9 +92,9 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
         gp_vis = None
 
     # Load LOW-LEVEL policies
-    policy1 = PPO.load("../trained-agents/PPO_space_GP_without_VAR/PPO_scratch.zip")
-    policy2 = PPO.load("../trained-agents/PPO_plume_GP_d_to_max_only_terminate_after_plume/PPO_scratch") #PPO_plume_GP_uncertainty_0p1_and_full_plume # PPO_plume_GP_clipped_RWD_no_distance_to_max
-    policy3 = PPO.load("../trained-agents/PPO_border_GP_d_to_max_only_terminate_after_plume/PPO_scratch") #PPO_border_GP_uncertainty_0p1_and_full_plume#PPO_border_GP_not_clipped_RWD_no_distance_to_max
+    policy1 = PPO.load("../trained-agents/PPO_space_30M/PPO_scratch.zip")
+    policy2 = PPO.load("../trained-agents/PPO_compare_100M_4259607/PPO_scratch.zip") #PPO_plume_GP_uncertainty_0p1_and_full_plume # PPO_plume_GP_clipped_RWD_no_distance_to_max
+    policy3 = PPO.load("../trained-agents/PPO_border_4280885/PPO_scratch.zip") #PPO_border_GP_uncertainty_0p1_and_full_plume#PPO_border_GP_not_clipped_RWD_no_distance_to_max
 
     # note that the termination function dont act: return == FALSE
     option1 = Option(policy1, termination_fn1, "spatial exploration", obs_keys=["obs_state","visited_maps_downsampled","space_coverage"])
@@ -97,8 +106,11 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
     env = HierarchicalEnv(
         base_env=gp_env,
         options=[option1, option2, option3],
-        gamma=0.99, MAX_OPT_LENGTH=MAX_OPT_LENGTH,
-        ACCURACY_GOALS=ACCURACY_GOALS,GP=GP # accuracy goals work only for no GP
+        gamma=0.998, # per AUV step, as in the HRL training. Only changes the reward, not the agent's choices
+        MAX_OPT_LENGTH=MAX_OPT_LENGTH,
+        ACCURACY_GOALS=ACCURACY_GOALS,GP=GP, # accuracy goals work only for no GP
+        max_primitive_steps=SURVEY_STEPS,
+        **(VARIANT or {}),
     )
 
     return env,gp_vis
@@ -106,16 +118,31 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
 # =========================================================
 # TEST AGENT
 # =========================================================
-model_path_global = "../trained-agents/HRL_PPO_GP_base_agents_GP_not_clipped_1G_ALL_term_0p1_uncertainty_AND_all_plume_covered_1_OPT_len_90prosent_d_base_agents_only_subtask_termination/HRL_PPO_scratch"# 
+model_path_global = "../trained-agents/HRL_PPO_untuned_4363368/HRL_PPO_scratch.zip"#
 
-def test_agent():
+# The untuned run (run 4) started before the training config saved HRL_VARIANT, so its settings are given here
+# (PRESETS["untuned"] in train_HRL(ppo).py). The later runs read theirs from HRL_VARIANT in training_config.json.
+UNTUNED_VARIANT = {"option_lengths": [3], "smdp_discount": False, "mean_option_reward": False, "decision_cost": 0.0, "meta_state": "full"}
+UNTUNED_SURVEY_STEPS = 480 # survey budget in AUV steps: 160 decisions of 3 steps
+OPTION_NAMES = ["space", "plume", "border"] # in the order of the options in make_test_env, as in the TensorBoard tags of the training
+OPTION_COLORS = [0x00FF00, 0xFF3399, 0xFFD700] # label and trail color per option in the Meshcat view: green, pink, yellow
+STEP_DELAY = 0.1 # seconds between AUV steps in the Meshcat view (0 = full speed)
+WATCH_EPISODES = 5 # episodes in the Meshcat view (mode 5)
 
-    VISUALISE =False
+def test_agent(deterministic: bool = True, episodes: int = 1000, visualise: bool = False):
+    """
+    Run the trained meta agent for a number of episodes and print the mean +- std of the results.
+    deterministic: the meta agent takes its most likely action (True) or samples it, as in training (False)
+    visualise: show the episodes in the Meshcat browser view, slowed down by STEP_DELAY, with a label of the sub-agent
+        in control and a pause after each episode
+    """
+
+    VISUALISE = visualise
     GP = True
     VIS_GP = False
     VIS_STATE_SPACE = False
-    EPISODES = 1000
-    
+    SEED = 0 # the env draws the plumes and start positions from np.random at reset, so every evaluation gets the same episodes
+
     # Load config from the same folder
     config = load_training_config_from_model(model_path_global)
     kernel_config = config.get("HRL_HYPERPARAMETERS", {}).get("kernel_config", None)
@@ -123,7 +150,9 @@ def test_agent():
     print(MULTIPLE_GAUSSIANS)
     MAX_OPT_LENGTH = 3#config.get("HRL_HYPERPARAMETERS", {}).get("MAX_OPT_LENGTH", None)
     ACCURACY_GOALS = [0.9,0.9,0.9]
-    env, gp_vis = make_test_env(GP=GP, VIS_GP=VIS_GP, VISUALISE=VISUALISE,kernel_config=kernel_config,MULTIPLE_GAUSSIANS = MULTIPLE_GAUSSIANS,MAX_OPT_LENGTH=MAX_OPT_LENGTH,ACCURACY_GOALS=ACCURACY_GOALS) # add here a kernel_config from the config file !
+    VARIANT, SURVEY_STEPS = hrl_variant_from_config(config, UNTUNED_VARIANT, UNTUNED_SURVEY_STEPS)
+    env, gp_vis = make_test_env(GP=GP, VIS_GP=VIS_GP, VISUALISE=VISUALISE,kernel_config=kernel_config,MULTIPLE_GAUSSIANS = MULTIPLE_GAUSSIANS,MAX_OPT_LENGTH=MAX_OPT_LENGTH,ACCURACY_GOALS=ACCURACY_GOALS,
+                                SURVEY_STEPS=SURVEY_STEPS,VARIANT=VARIANT) # add here a kernel_config from the config file !
 
     # Load HIGH-LEVEL model (the one you trained in train.py)
     # CNN reconstruction for downsampling. NOTE: if you did not train an agent yet, you can simply use the CNN defined
@@ -140,6 +169,8 @@ def test_agent():
     MAX_EPS_LEN = config["ENVIRONMENT"]["max_episode_length"] # e.g. 90
 
     env.visualise_env = VISUALISE # allowing the simulator to update within an option
+    env.step_delay = STEP_DELAY
+    env.option_colors = OPTION_COLORS
     env.base_env.META_test = True # for testing. Records the tp,fp,np,fn and other info in info
     env.base_env.max_option_length = MAX_OPT_LENGTH
     env.base_env.option_length = 0
@@ -160,16 +191,23 @@ def test_agent():
     actual_average_plume_coverage =[]
     actual_average_border_coverage =[]
     average_options_chosen =[]
+    average_reward = []
+    meta_actions = [] # every decision of every episode
     tp=[]
     tn=[]
     fp=[]
     fn=[]
     RMSE_c=[]
-    extracted_GP_imgs =[]
-    for ep in range(EPISODES):
+    extracted_GP_imgs: list[np.ndarray] =[]
+    set_random_seed(SEED)
+    for ep in tqdm(range(episodes), desc="episodes", disable=VISUALISE):
 
-        #print(f"\n=== Episode {ep + 1} ===")
-        result = run_episode_hrl(env,model,MAX_EPS_LEN,vis_state_space,gp_vis,GP=GP,VISUALISE=VISUALISE)
+        if VISUALISE:
+            print(f"\n=== Episode {ep + 1} ===")
+        result = run_episode_hrl(env,model,MAX_EPS_LEN,vis_state_space,gp_vis,GP=GP,VISUALISE=VISUALISE,deterministic=deterministic,
+                                 verbose=VISUALISE,pause_at_end=VISUALISE)
+        average_reward.append(result["reward"])
+        meta_actions.extend(result["actions"])
         average_space_coverage.append(result["space_coverage"])
         average_border_coverage.append(result["border_coverage"])
         average_plume_coverage.append(result["plume_coverage"])
@@ -199,6 +237,11 @@ def test_agent():
         rmse = np.sqrt(mse)
 
         RMSE_c.append(rmse)
+    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, model {model_path_global}")
+    print(f"REWARD = {np.mean(np.array(average_reward)):.2f} +- {np.std(np.array(average_reward)):.2f}")
+    action_names = HierarchicalEnv.action_names(OPTION_NAMES, VARIANT["option_lengths"])
+    choice_counts = np.bincount(meta_actions, minlength=len(action_names))
+    print("CHOICES = " + ", ".join(f"{name} {count / choice_counts.sum():.2f}" for name, count in zip(action_names, choice_counts)))
     print(
         f"RMSE = {np.mean(np.array(RMSE_c)):.5f} "
         f"+- {np.std(np.array(RMSE_c)):.5f}"
@@ -362,7 +405,8 @@ def manual_control():
 if __name__ == "__main__":
     # Choose whether to run trained agent or manual control
     mode = input(
-        "Enter mode (1 for trained agent, 2 manual control and 3 for validation mode): "
+        "Enter mode (1 for trained agent, 2 manual control, 3 for validation mode, 4 for trained agent with sampled actions "
+        "and 5 to watch the trained agent in Meshcat): "
     )
 
     if mode == "1":
@@ -371,5 +415,13 @@ if __name__ == "__main__":
         manual_control()
     elif mode == "3":
         validation()
+    elif mode == "4":
+        test_agent(deterministic=False)
+    elif mode == "5":
+        actions = input("Enter d for deterministic or s for sampled actions: ")
+        if actions in ("d", "s"):
+            test_agent(deterministic=actions == "d", episodes=WATCH_EPISODES, visualise=True)
+        else:
+            print("Invalid actions selected")
     else:
         print("Invalid mode selected")
