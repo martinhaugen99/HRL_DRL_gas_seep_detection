@@ -10,6 +10,15 @@ GAMMA = 0.9
 SPACE_STEP_REWARD = 1 / 6 - 1  # space option: one new cell per step, minus the time penalty
 
 
+class StubRenderer:
+    def __init__(self) -> None:
+        self.labels: list[tuple[str, int]] = []
+
+    def show_label(self, lines: list[tuple[str, int]]) -> None:
+        assert len(lines) == 1
+        self.labels.append(lines[0])
+
+
 class StubBaseEnv:
     """Stand-in for the GP-wrapped HUGIN env. The AUV visits one new cell per step if progress is set, otherwise
     none, and the episode ends after end_step steps. Plume and border are fully covered."""
@@ -32,6 +41,11 @@ class StubBaseEnv:
         self.steps = 0
         self.maxN_over_thresh = 4.0  # only the corner cells: no plume found
         self.MEAN_uncertainty = 1.0
+        self.renderer = StubRenderer()
+        self.marker_colors: list[int] = []
+
+    def step_sim(self, color: int) -> None:
+        self.marker_colors.append(color)
 
     @property
     def unwrapped(self) -> "StubBaseEnv":
@@ -57,8 +71,9 @@ class StubBaseEnv:
 
 
 class StubOption:
-    def __init__(self, value_estimate: float = 0.0) -> None:
+    def __init__(self, value_estimate: float = 0.0, name: str = "option") -> None:
         self.value_estimate = value_estimate
+        self.name = name
 
     def act(self, obs: dict) -> int:
         return 0
@@ -241,6 +256,48 @@ def test_minimal_meta_state() -> None:
     assert obs["gp_uncertainty"][0] == pytest.approx(0.4)
     assert obs["space_coverage"][0] == pytest.approx(3 / 100)
     assert env.observation_space.contains(obs)
+
+
+def test_visualised_decision_labels_the_sub_agent_and_colors_its_steps() -> None:
+    # Arrange
+    env = make_env(progress=True, options=[StubOption(name="spatial exploration"), StubOption(name="gas plume exploration")])
+    env.visualise_env = True
+    env.option_colors = [0x00FF00, 0xFF3399]
+
+    # Act
+    env.step(1)
+    env.step(0)
+
+    # Assert: one label per decision, one marker per AUV step in the color of the option
+    assert env.base_env.renderer.labels == [
+        ("Sub-agent: gas plume exploration", 0xFF3399),
+        ("Sub-agent: spatial exploration", 0x00FF00),
+    ]
+    assert env.base_env.marker_colors == [0xFF3399] * 3 + [0x00FF00] * 3
+
+
+def test_visualised_label_shows_the_option_length_if_there_are_several() -> None:
+    # Arrange
+    env = make_env(progress=True, options=[StubOption(name="spatial exploration")], option_lengths=[2, 5], smdp_discount=True)
+    env.visualise_env = True
+
+    # Act
+    env.step(1)
+
+    # Assert
+    assert env.base_env.renderer.labels == [("Sub-agent: spatial exploration (5 steps)", 0x00FF00)]
+
+
+def test_not_visualised_by_default() -> None:
+    # Arrange
+    env = make_env(progress=True)
+
+    # Act
+    env.step(0)
+
+    # Assert
+    assert env.base_env.renderer.labels == []
+    assert env.base_env.marker_colors == []
 
 
 def test_minimal_values_meta_state_adds_the_sub_agent_values() -> None:

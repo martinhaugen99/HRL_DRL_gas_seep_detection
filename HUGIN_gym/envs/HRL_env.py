@@ -50,7 +50,9 @@ class HierarchicalEnv(gym.Env):
         self.current_obs = None
         self.primitive_steps = 0
 
-        self.visualise_env = False
+        self.visualise_env = False # Meshcat view: label of the sub-agent in control and a trail marker per AUV step
+        self.step_delay = 0.0 # seconds to wait after each AUV step in the Meshcat view
+        self.option_colors = [0x00FF00] * len(options) # label and trail color (0xRRGGBB) per option in the Meshcat view
         self.no_progress_steps=0
         self.once_per_episode=True # for pure GT run, GT HRL and GT subagents
         self.GP=GP
@@ -122,6 +124,11 @@ class HierarchicalEnv(gym.Env):
         #trajectory_info.append(state)
         option_length = 0
         self.base_env.option_length = option_length
+        if self.visualise_env:
+            label = f"Sub-agent: {option.name}"
+            if len(self.option_lengths) > 1:
+                label += f" ({target_length} steps)"
+            self.base_env.unwrapped.renderer.show_label([(label, self.option_colors[option_idx])])
 
         while True:
 
@@ -141,8 +148,8 @@ class HierarchicalEnv(gym.Env):
                     reward_debug = meta_reward
 
             if self.visualise_env:
-                self.base_env.unwrapped.step_sim() # step_sim only uses the self.state # NOTE: only works IF GP ACTIVATED
-                #time.sleep(0.07) #to make vis better
+                self.base_env.unwrapped.step_sim(self.option_colors[option_idx]) # step_sim only uses the self.state # NOTE: only works IF GP ACTIVATED
+                time.sleep(self.step_delay)
             
             current_visited_sum = np.sum(self.base_env.unwrapped.state["visited_map"])
             current_c_over_sum =(np.sum(self.base_env.unwrapped.state["c_over_threshold_map"]))
