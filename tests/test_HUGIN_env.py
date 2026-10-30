@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from HUGIN_gym.envs.core.visualisation.renderer import concentration_bands
 from HUGIN_gym.envs.HUGIN_env import HUGIN
 
 
@@ -54,3 +55,24 @@ def test_vary_plume_size_draws_a_new_sigma_from_the_range() -> None:
     # Assert
     assert all(low <= sigma <= high for sigma in sigmas)
     assert len(set(sigmas)) == len(sigmas)
+
+
+def test_cloud_bands_in_the_view_are_the_plume_and_border_of_the_coverage() -> None:
+    # Arrange
+    env = make_env(vary_plume_size=True)
+    np.random.seed(0)
+
+    for _ in range(5):
+        env.reset()
+
+        # Act
+        bands = concentration_bands(env.conc, env.c_threshold, env.c_around_width)
+
+        # Assert
+        assert bands["plume"].any() and bands["border"].any()
+        np.testing.assert_array_equal(
+            bands["plume"] | bands["plume and border"], env.GT_c_over_threshold_maps
+        )
+        np.testing.assert_array_equal(
+            bands["plume and border"] | bands["border"], env.GT_c_around_threshold_maps
+        )

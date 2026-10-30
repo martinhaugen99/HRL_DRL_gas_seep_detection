@@ -1070,10 +1070,10 @@ class HUGIN(gym.Env):
     def render(self):
         self.renderer.render(self.model_path)
         # self.renderer.plot_concentration_field(self.concentration_function ,self.gaussian_centers[0], self.gaussian_sigma)
-        self.renderer.plot_concentration_field2(self.x,self.y,self.z,self.conc,self.c_threshold-self.c_around_width)
+        self.renderer.plot_concentration_field2(self.x,self.y,self.z,self.conc,self.c_threshold,self.c_around_width)
 
-    def step_sim(self):
-        self.renderer.step_sim(self.state)#,self.old_state,self.action) # forward also local patch of visited map
+    def step_sim(self, color=0x00FF00):
+        self.renderer.step_sim(self.state, color)#,self.old_state,self.action) # forward also local patch of visited map
 
         """
         define here how to plot density field and density estimation
