@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from HUGIN_gym.utils.io import append_resume_log, find_latest_checkpoint
+from HUGIN_gym.utils.io import (
+    append_resume_log,
+    find_latest_checkpoint,
+    hrl_variant_from_config,
+)
+
+DEFAULT_VARIANT = {"option_lengths": [3], "smdp_discount": False, "meta_state": "full"}
 
 
 def test_find_latest_checkpoint_compares_step_counts_as_numbers(tmp_path: Path) -> None:
@@ -51,3 +57,37 @@ def test_append_resume_log_appends_lines_with_slurm_job(
     assert len(lines) == 2
     assert lines[0].endswith("job 4259607_0: first")
     assert lines[1].endswith("job 4259607_0: second")
+
+
+def test_hrl_variant_from_config_reads_hrl_variant() -> None:
+    # Arrange: as written by build_training_config_ppo from run 5 on
+    config = {
+        "HRL_VARIANT": {
+            "preset": "duration",
+            "survey_steps": 480,
+            "option_lengths": [2, 5],
+            "smdp_discount": True,
+            "meta_state": "full",
+        }
+    }
+
+    # Act
+    variant, survey_steps = hrl_variant_from_config(config, DEFAULT_VARIANT, 300)
+
+    # Assert: only the HierarchicalEnv settings are left in the variant
+    assert variant == {"option_lengths": [2, 5], "smdp_discount": True, "meta_state": "full"}
+    assert survey_steps == 480
+    assert "preset" in config["HRL_VARIANT"]  # the config is not changed
+
+
+def test_hrl_variant_from_config_uses_defaults_without_hrl_variant() -> None:
+    # Arrange: runs started before the config saved HRL_VARIANT (run 4)
+    config = {"ENVIRONMENT": {"max_episode_length": 160}}
+
+    # Act
+    variant, survey_steps = hrl_variant_from_config(config, DEFAULT_VARIANT, 480)
+
+    # Assert
+    assert variant == DEFAULT_VARIANT
+    assert variant is not DEFAULT_VARIANT
+    assert survey_steps == 480

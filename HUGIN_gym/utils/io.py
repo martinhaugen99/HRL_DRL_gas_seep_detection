@@ -103,3 +103,19 @@ def load_training_config_from_model(model_path):
     with open(config_path, "r") as f:
         config = json.load(f)
     return config
+
+
+def hrl_variant_from_config(
+    config: dict, default_variant: dict, default_survey_steps: int
+) -> tuple[dict, int]:
+    """
+    The meta agent variant (the HierarchicalEnv settings of a preset in train_HRL(ppo).py) and the survey budget in
+    AUV steps of an HRL run, from HRL_VARIANT in its training config. Runs started before the config saved
+    HRL_VARIANT get the defaults.
+    """
+    if "HRL_VARIANT" not in config:
+        return dict(default_variant), default_survey_steps
+    variant = dict(config["HRL_VARIANT"])
+    variant.pop("preset", None)
+    survey_steps = variant.pop("survey_steps")
+    return variant, survey_steps
