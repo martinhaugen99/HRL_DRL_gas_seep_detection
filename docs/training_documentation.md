@@ -35,7 +35,7 @@ The plots come from [training_data_visualiser.py](../HUGIN_gym/evaluation/traini
 | 1 | `gp_230steps` | 4218364 | 2026-09-24 22:01 | `f220184` | First runs of all three algorithms on Fox | Finished |
 | 2 | `compare` | 4223550, 4223553, 4223557 | 2026-09-26 13:35–13:49 | `961f7a2` | Same task, budget and network size for all three algorithms; start near the plume; random plume size; less DQN exploration. 3 repeats | Finished |
 | 3 | `compare_100M` | 4259604, 4259607, 4259610; resumed as 4272086, 4272088, 4272091 | 2026-10-04 22:31 – 2026-10-05 05:05 | `10e4023`; resumed with `bf7e7fc` | 10× the steps, 24 envs, 460-step episodes, 128 × 128 networks. 3 repeats | Finished; 8 of 9 runs resumed after a full disk quota |
-| 4 | `untuned` (HRL) | 4363368; resumed as 4367840, 4371199 | 2026-10-28 15:13 | `56ba1c7` | First training of the HRL meta agent, with the settings from the thesis code | Running; hit the 12 h limit twice and was resumed |
+| 4 | `untuned` (HRL) | 4363368; resumed as 4367840, 4371199 | 2026-10-28 15:13 | `56ba1c7` | First training of the HRL meta agent, with the settings from the thesis code | Finished 2026-10-30 01:23; hit the 12 h limit twice and was resumed |
 | 5 | `minimal`, `minimal_values`, `duration`, `duration_mean`, `minimal_values_duration` (HRL) | 4371279, 4371280, 4371281, 4371282, 4371283 | 2026-10-29 22:58 | `152ba0a` | The meta agent chooses how many steps a sub-agent runs; smaller meta states; sub-agent value estimates | Running |
 
 "Started" is `RUN_INFO.timestamp` in `training_config.json`. "Code" is the last commit before the run started. From run 3 on, it is the commit checked out on Fox when the job started (`git reflog --date=iso` on Fox).
@@ -366,7 +366,7 @@ From run 4 on, the runs train the meta agent of the HRL setup. The meta agent (P
   - +40 and the episode ends when the mean GP standard deviation over the map is 0.1 or lower and both coverages are at least 90 %.
   - −4 instead of the step reward when the AUV tries to leave the map, and −2 when an option ends after 3 steps without new cells.
 - **Meta agent (PPO):** 12 parallel envs, `n_steps` 512, `batch_size` 1024, `n_epochs` 4, `learning_rate` 3e-4, `gae_lambda` 0.95, `clip_range` 0.2, `ent_coef` 0.01, `vf_coef` 0.5, `max_grad_norm` 0.5, hidden layers pi [64, 64] and vf [64, 64] Tanh (SB3 default). `gamma` 0.998 per AUV step, which is 0.998³ ≈ 0.994 per 3-step decision. 10M decisions, with a checkpoint and a stats snapshot every 2,049,996 decisions.
-- **Fox:** 16 CPUs, 2 GB per CPU (32 GB). Run 4 made about 106 decisions per second.
+- **Fox:** 16 CPUs, 2 GB per CPU (32 GB). Run 4 made 103–125 decisions per second and used at most 7.1 GiB of memory.
 - **Counting:** the meta agent's step count, the episode length in the stats and `rollout/ep_len_mean` count meta decisions, not AUV steps.
 
 ## Run 4: HRL `untuned` (job 4363368)
@@ -375,62 +375,160 @@ From run 4 on, the runs train the meta agent of the HRL setup. The meta agent (P
 - **Submitted with:** `sbatch fox_train_HRL.sh untuned`, resumed twice with `sbatch fox_train_HRL.sh untuned 4363368` (jobs 4367840 and 4371199).
 - **Code:** `56ba1c7` (2026-10-28 14:57), pulled on Fox at 14:58, for all three jobs. The next pull on Fox was 2026-10-29 22:55, after the last job had started.
 - **Fox resources:** 16 CPUs, 32 GB, 12 h limit.
-- **Failed first submission:** job 4363336 (2026-10-28 14:59) failed after 19 s. The cause was not checked; it is in `slurm-hugin-hrl-4363336.out` on Fox.
+- **Failed first submission:** job 4363336 (2026-10-28 14:59) failed after 19 s with a `FileNotFoundError`: `PPO.load` did not find the space sub-agent `../trained-agents/PPO_space_30M/PPO_scratch.zip` (`slurm-hugin-hrl-4363336.out` on Fox). The error shows the path as `PPO_scratch.zip.zip`, because SB3 also tries the name with `.zip` added. Job 4363368 started 13 min later with the same code and loaded the model, so the file was in place by then.
 - **Meta agent:** 3 actions, one per sub-agent, and every option runs 3 steps, so an episode has at most 160 decisions. The meta state is 158 inputs, turned into 128 features (ReLU) by `AgentHRLExplore` ([agent0_HRL.py](../HUGIN_gym/agents/feature_extractor/agent0_HRL.py)): the three coverages, position and heading, 7 × 7 patches of the visited map and of the plume and border estimates, and `distance_from_max`. With the GP on, `distance_from_max` is always 1.0.
-- **Status:** running. The third job should finish on 2026-10-30 between about 02:00 and 02:15.
+- **Status:** finished. The third job completed on 2026-10-30 01:23 after 10,000,176 decisions (76,478 episodes). The final model is `HRL_PPO_scratch.zip` in the run folder.
 
 ### Time limit and resumes
 
 The 12 h limit was too short for 10M decisions, so the run needed three jobs. Each job lost the decisions after its last checkpoint: about 1 h in the first job and about 1.5 h in the second.
 
-| Job | Slurm start | Slurm end | State | Starts from decision | Last checkpoint | Checkpoint written | Speed |
-|---|---|---|---|---|---|---|---|
-| 4363368 | 2026-10-28 15:12 | 2026-10-29 03:12 | TIMEOUT | 0 | 4,099,992 | 2026-10-29 02:16 | about 103 decisions/s |
-| 4367840 | 2026-10-29 08:57 | 2026-10-29 20:57 | TIMEOUT | 4,099,992 | 8,199,984 | 2026-10-29 19:24 | about 109 decisions/s |
-| 4371199 | 2026-10-29 21:21 | – | RUNNING | 8,199,984 | – (the next would be 10,249,980) | – | – |
+| Job | Node | Slurm start | Slurm end | Elapsed | State | Starts from decision | Saved last | Saved at | Speed | Peak memory |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 4363368 | c1-19 | 2026-10-28 15:12 | 2026-10-29 03:12 | 12:00:18 | TIMEOUT | 0 | checkpoint 4,099,992 | 2026-10-29 02:16 | about 103 decisions/s | 5.7 GiB |
+| 4367840 | c1-13 | 2026-10-29 08:57 | 2026-10-29 20:57 | 12:00:06 | TIMEOUT | 4,099,992 | checkpoint 8,199,984 | 2026-10-29 19:24 | about 109 decisions/s | 7.1 GiB |
+| 4371199 | c1-9 | 2026-10-29 21:21 | 2026-10-30 01:23 | 04:01:22 | COMPLETED | 8,199,984 | final model 10,000,176 | 2026-10-30 01:23 | about 125 decisions/s | 7.1 GiB |
 
-- The Slurm times come from `sacct`. The run's own start times (`RUN_INFO.timestamp` in `training_config.json` and the times in `resume_log.txt`) are about 30 s later, after the envs are set up. The speeds are measured from those times.
-- 10M decisions take about 26–27 h, so `fox_train_HRL.sh` now asks for 30 h.
+- The Slurm times, the states and the peak memory (`MaxRSS` of the batch step) come from `sacct`. The nodes come from the TensorBoard event files and the Slurm log. The run's own start times (`RUN_INFO.timestamp` in `training_config.json` and the times in `resume_log.txt`) are about 30 s later, after the envs are set up. The speeds are measured from those times to the time the last model was saved.
+- **Total:** 28.0 h in three jobs. About 2.5 h of it repeated decisions that were lost after the last checkpoint of the first two jobs, so the 10M decisions took about 25.5 h. At the measured speeds, 10M decisions take 22–27 h in one job, so `fox_train_HRL.sh` now asks for 30 h.
+- **Third job:** faster than the first two (about 125 against 103 and 109 decisions/s) and on another node. Its Slurm log reports "Job exited normally". On average it used 37 % of its 16 CPUs (23.7 CPU hours in 4.0 h).
+- **Memory:** at most 7.1 GiB of the 32 GiB requested. 16 GB (1 GB per CPU) would still leave more than twice the peak.
 
-### Learning curve so far
+### Learning curve
 
-From `episode_stats_8199984.pkl` (61,967 episodes up to 8.2M decisions), split into 20 groups of equal size, in order. "Plume coverage" is the true coverage. It is missing for some episodes, so its groups line up only roughly with the decisions.
+From `training_stats.pkl` (76,478 episodes, 10M decisions), split into 20 groups of equal size, in order. "Plume coverage" is the true coverage. It is missing for 1,109 episodes (1.5 %), so its groups line up only roughly with the decisions.
 
 | Up to decision | Total reward | Episode length (decisions) | Ended early (%) | Visited (%) | Plume coverage (%) |
 |---|---|---|---|---|---|
-| 449,651 | -376.1 | 145.1 | 49.6 | 79.4 | 88.6 |
-| 895,296 | -362.0 | 143.8 | 54.6 | 79.8 | 89.1 |
-| 1,325,036 | -332.9 | 138.7 | 60.3 | 81.6 | 89.8 |
-| 1,732,379 | -288.1 | 131.4 | 75.7 | 83.5 | 92.1 |
-| 2,136,361 | -296.0 | 130.4 | 80.9 | 87.4 | 92.3 |
-| 2,542,129 | -304.1 | 130.9 | 78.9 | 87.3 | 92.2 |
-| 2,948,584 | -303.9 | 131.2 | 79.3 | 87.3 | 92.0 |
-| 3,353,915 | -304.1 | 130.8 | 79.8 | 87.3 | 92.2 |
-| 3,761,757 | -306.7 | 131.6 | 77.8 | 87.5 | 92.2 |
-| 4,168,793 | -307.6 | 131.4 | 78.0 | 87.2 | 91.9 |
-| 4,576,638 | -310.7 | 131.6 | 76.9 | 87.3 | 92.0 |
-| 4,980,678 | -302.4 | 130.4 | 79.7 | 87.1 | 92.3 |
-| 5,387,546 | -307.7 | 131.3 | 77.5 | 87.0 | 92.0 |
-| 5,799,114 | -313.7 | 132.8 | 71.7 | 85.9 | 91.3 |
-| 6,210,692 | -277.0 | 132.9 | 70.7 | 80.2 | 92.0 |
-| 6,617,401 | -246.5 | 131.3 | 75.8 | 78.1 | 93.4 |
-| 7,019,434 | -231.7 | 129.8 | 77.9 | 78.0 | 94.6 |
-| 7,417,298 | -219.6 | 128.4 | 79.3 | 77.9 | 95.2 |
-| 7,809,406 | -202.5 | 126.6 | 82.0 | 77.9 | 95.3 |
-| 8,198,391 | -193.8 | 125.6 | 83.8 | 77.3 | 95.6 |
+| 554,383 | -374.0 | 145.0 | 50.6 | 79.6 | 88.8 |
+| 1,097,952 | -353.7 | 142.1 | 55.6 | 80.6 | 88.9 |
+| 1,611,045 | -300.9 | 134.2 | 68.9 | 81.6 | 91.3 |
+| 2,110,621 | -297.8 | 130.6 | 80.7 | 87.5 | 92.4 |
+| 2,611,017 | -302.9 | 130.9 | 79.1 | 87.3 | 92.2 |
+| 3,111,572 | -303.2 | 130.9 | 79.8 | 87.3 | 92.1 |
+| 3,613,518 | -305.5 | 131.3 | 78.7 | 87.4 | 92.1 |
+| 4,117,004 | -308.9 | 131.7 | 77.5 | 87.3 | 92.0 |
+| 4,619,507 | -308.3 | 131.4 | 77.7 | 87.3 | 92.2 |
+| 5,118,084 | -301.6 | 130.4 | 79.6 | 87.1 | 92.3 |
+| 5,623,881 | -313.0 | 132.3 | 75.0 | 86.8 | 91.6 |
+| 6,132,296 | -291.4 | 133.0 | 69.9 | 82.0 | 91.5 |
+| 6,635,249 | -249.6 | 131.5 | 75.1 | 78.3 | 93.3 |
+| 7,131,877 | -230.4 | 129.9 | 78.5 | 77.8 | 94.8 |
+| 7,619,857 | -212.8 | 127.6 | 80.0 | 78.1 | 95.2 |
+| 8,099,902 | -195.6 | 125.5 | 83.6 | 77.5 | 95.7 |
+| 8,580,825 | -189.2 | 125.8 | 83.8 | 77.2 | 95.7 |
+| 9,057,668 | -184.9 | 124.7 | 85.0 | 77.1 | 96.2 |
+| 9,528,872 | -177.4 | 123.3 | 85.5 | 77.1 | 96.4 |
+| 9,997,920 | -171.0 | 122.7 | 85.2 | 77.3 | 96.2 |
 
-"Ended early" means the episode reached the termination goal before the limit of 160 decisions.
+- "Ended early" means the episode reached the termination goal before the limit of 160 decisions.
+- The last row ends at 9,997,920 decisions: the other 2,256 of the 10,000,176 decisions belong to episodes that had not finished when the run stopped.
+- While the run was going, this table used the snapshot `episode_stats_8199984.pkl` (61,967 episodes up to 8.2M decisions). The method is the same, but the group boundaries have moved because there are more episodes now.
 
-### Observations so far
+### Results
+
+Mean ± std over the last 1,000 training episodes:
+
+| Run | Episodes | Total reward | Episode length (decisions) | Visited (%) | Plume coverage (%) | Ended early (%) |
+|---|---|---|---|---|---|---|
+| `HRL_PPO_untuned_4363368` | 76,478 | -162.8 ± 163.2 | 122.0 ± 22.0 | 77.0 ± 5.5 | 96.0 ± 10.8 | 86.2 |
+
+![HRL PPO untuned 4363368](training_runs/HRL_PPO_untuned_4363368/training_stats.png)
+
+- **Plot panels:** "Episode Length" counts decisions. "Steps Around Threshold (%)" is the true border coverage, and "Steps Above Threshold (%)" the true plume coverage.
+- **Reward panel:** the rightmost panel shows the reward of each decision in every 10th episode. The spikes to about 80 are decisions in which both +40 bonuses fall, the coverage bonus and the end bonus. 99 % of the decisions with a reward above 60 are the last decision of their episode. Such a decision occurs in 25 % of the episodes in the first fifth of the training and in 9 % in the last fifth.
+
+### Observations
 
 - **Three phases:**
-  - Up to about 2M decisions, fast improvement: the reward goes from −376 to −296, and the share that ends early from 50 % to 81 %.
-  - From 2M to 5.8M, flat at about −305.
-  - From about 5.8M, a second improvement that is still going at 8.2M: the reward goes from −314 to −194, ended early from 72 % to 84 %, and the plume coverage from 92 % to 95.6 %.
+  - Up to about 2.1M decisions, fast improvement: the reward goes from −374 to −298, and the share that ends early from 51 % to 81 %.
+  - From 2.1M to about 5.6M, flat at about −305.
+  - From about 5.8M to the end, a second improvement: the reward goes from −313 to −171, and the plume coverage from 91.6 % to 96.2 %. The share that ends early first dips to 70 % at 6.1M and then rises to 85 %. The improvement slows down towards the end (−185 to −171 over the last 0.9M decisions), but it has not stopped.
 - **Less of the map visited:** in the second improvement the visited share drops from 87 % to 77 %. The agent reaches the termination goal with less of the map visited.
+- **Policy entropy:** from `train/entropy_loss` in TensorBoard.
+  - **Start:** 1.10, a uniform choice among the three sub-agents.
+  - **Flat phase:** it falls to almost 0 (0.007 at its lowest, at 1.9M, and 0.02–0.05 from 2M to 5M). The agent then made almost the same choice every time in a given situation.
+  - **Second improvement:** it rises again to about 0.5 at 6.5–7M.
+  - **End:** 0.33.
+
+  The run alone does not show whether the rise caused the improvement. Because the final policy is still fairly random, its deterministic actions do much worse than its sampled ones (see [Evaluation of the trained agent](#evaluation-of-the-trained-agent)).
+- **Value function:** the explained variance (`train/explained_variance`) goes from about 0 at the start to 0.80 at 4–5M and 0.63 at the end.
 - **Run length:** a run of 5M decisions would have stopped in the flat phase. Run 5 therefore also uses 10M decisions.
-- **Resume:** the second improvement starts at about 5.8M, not at the resume at 4.1M.
-- **Results after 10M decisions:** to be added when the run has finished.
+- **Resumes:** the second improvement starts at about 5.8M, not at the resume at 4.1M. The curve shows no change at the resume at 8.2M.
+
+### Evaluation of the trained agent
+
+On 2026-10-30 the final model was tested on 1,000 new episodes with [test_HRL(ppo).py](<../HUGIN_gym/evaluation/test_HRL(ppo).py>). The code is `a73297d` plus that day's evaluation changes, which were not yet committed.
+
+- **Test env:** the same as in training. The AUV starts in a corner, there is one source with σ in [2.0, 5.0], the GP is on (RBF, length scale 3.5), the goals are [0.9, 0.9, 0.9] and the survey budget is 480 steps (160 decisions). The script reads the run settings from `training_config.json`. Run 4 has no `HRL_VARIANT` there, so the script uses the `untuned` settings.
+- **Same episodes:** seed 0. The env only draws the plumes and start positions when it resets, so every mode gets the same 1,000 episodes in the same order.
+- **Two ways to choose:** at each decision, the meta agent's network gives a probability for each sub-agent.
+  - **Sampled (mode 4):** draws the sub-agent with these probabilities, as PPO does in training. This shows the policy as it was trained.
+  - **Deterministic (mode 1):** always takes the most likely sub-agent.
+
+  The sub-agents always act deterministically.
+- **Run with** the following command from the repository root. Modes 1 and 4 took about 44 min on a Mac.
+
+  ```bash
+  PYTHONPATH=. .venv/bin/python "HUGIN_gym/evaluation/test_HRL(ppo).py"
+  ```
+
+  Enter `1` (deterministic), `4` (sampled) or `5` (watch in Meshcat, see [Watching episodes](#watching-episodes-mode-5)).
+
+Mean ± std over the 1,000 test episodes, next to the last 1,000 training episodes:
+
+| Metric | Output line | Training | Sampled (mode 4) | Deterministic (mode 1) |
+|---|---|---|---|---|
+| Ended early (%) | `SUCCESS_RATE` | 86.2 | 86 | 51 |
+| Total reward | `REWARD` | -162.8 ± 163.2 | -173.9 ± 158.1 | -396.6 ± 418.2 |
+| Decisions | `Options_CHOSEN` | 122.0 ± 22.0 | 125.9 ± 20.5 | 134.7 ± 27.7 |
+| AUV steps | `STEPS` | – | 376.7 ± 61.6 | 403.6 ± 83.5 |
+| Turns | `TURNS` | – | 113.8 ± 39.8 | 194.1 ± 140.6 |
+| Visited (%) | `SPACE` | 77.0 ± 5.5 | 76 ± 6 | 55 ± 27 |
+| True plume coverage (%) | `ACTUAL PLUME` | 96.0 ± 10.8 | 97.1 ± 9.4 | 95.5 ± 12.8 |
+| True border coverage (%) | `ACTUAL BORDER` | – | 95.7 ± 8.7 | 93.6 ± 12.0 |
+| Plume coverage of the GP map (%) | `PLUME` | – | 98 ± 6 | 95 ± 13 |
+| Border coverage of the GP map (%) | `BORDER` | – | 96 ± 6 | 93 ± 13 |
+| Choices: space / plume / border | `CHOICES` | – | 0.74 / 0.12 / 0.14 | 0.48 / 0.34 / 0.18 |
+| RMSE of the GP concentration map | `RMSE` | – | 0.0023 ± 0.0080 | 0.0050 ± 0.0157 |
+| True positives (share of the 1,681 cells) | `TP` | – | 0.0540 | 0.0534 |
+| False positives | `FP` | – | 0.0024 | 0.0025 |
+| False negatives | `FN` | – | 0.0002 | 0.0004 |
+
+- **`SUCCESS_RATE`** is the share of episodes that reached the termination goal before the survey budget ran out, the same as "Ended early" in training.
+- **`TP`, `FP` and `FN`** compare the GP's plume map (GP mean above 0.3) with the true plume at the end of the episode, as shares of all 1,681 cells. `TN` (0.943 sampled, 0.944 deterministic) is left out.
+- **The true coverages** are missing for episodes whose last step hit the map edge, so those two rows cover slightly fewer episodes.
+
+**Observations:**
+
+- **Sampled actions reproduce training:** 86 % end early (86.2 % in training), with 125.9 decisions (122.0), 76 % of the map visited (77 %) and 97.1 % true plume coverage (96.0 %). So the test env matches the training conditions.
+- **Deterministic actions do much worse:** only half the episodes end early. The visited share varies widely (55 ± 27 %), and the agent turns 70 % more.
+  - **Why:** in the same situation the meta agent always picks the same sub-agent, and the sub-agents are deterministic too. When the AUV comes back to a situation it has been in before, it repeats the same moves and can circle until the budget runs out. Sampling breaks such loops by chance.
+  - **Example:** deterministic episode 3 of seed 0 visits 1.8 % of the map in 480 steps.
+  - This fits the entropy of 0.33 at the end of training: the policy still depends on its randomness.
+- **The plume is found in both modes:** the true plume coverage is 97.1 % and 95.5 %. The GP map finds over 99 % of the true plume cells (TP / (TP + FN): 99.6 % sampled, 99.3 % deterministic). The deterministic agent mostly fails at covering the map, which the end goal needs (mean GP standard deviation 0.1 or lower).
+- **The false positives are the map corners:** `FP` (0.0024) is almost exactly the 4 corner cells (4 / 1,681 = 0.0024), which the GP map always marks as plume (`_confusion_matrix` in [GPWrapper.py](../HUGIN_gym/envs/wrappers/GPWrapper.py)).
+- **Which to report:** the sampled results show the policy as it was trained. Report the deterministic results next to them, and say which is which.
+
+#### Reported coverage against true coverage
+
+- **Two measures:** `PLUME` and `BORDER` are measured against the GP map. This is the coverage the meta agent sees, and the one its coverage goal and bonus use. It is the share of the cells the GP marks as plume (GP mean above 0.3) or border (0.15 to 0.45) that the AUV has visited. `ACTUAL PLUME`, `ACTUAL BORDER` and the plume coverage in the training stats are measured against the true plume.
+- **Usually they agree:** in training, the GP-based plume coverage at the end of an episode was within 1 point of the true one in 91 % of the 75,369 episodes with both values (border: 87 %). Over the last 1,000 training episodes the means are 96.5 % against 96.0 % (plume) and 95.5 % against 94.9 % (border).
+- **Exception:** while no cell of the GP map is above 0.3, the GP threshold for the plume drops to 0.15 (`step` in [GPWrapper.py](../HUGIN_gym/envs/wrappers/GPWrapper.py)). The "plume" is then the weak gas the AUV has measured around itself, and circling there gives a high reported coverage.
+  - **Example:** deterministic episode 3 of seed 0. The true plume has 141 cells and the GP plume 19 (plus the 4 corners). The reported plume coverage is 87 %, the true one 0 %. The AUV circled in the weak gas outside the plume for all 480 steps.
+- **How often:** at the end of the episode, the GP-based plume coverage was at least 90 % while the true one was below 50 % in 0.15 % of the training episodes (0.3 % of the last 1,000).
+- **Effect on the reward:** the +40 coverage bonus is paid when the GP-based plume and border coverages both reach 90 %, so it can also be paid for such a patch of weak gas. How often this happened in training was not counted.
+- **For the article:** use the true coverages (`ACTUAL PLUME`, `ACTUAL BORDER` and the plume coverage in the training stats).
+
+#### Watching episodes (mode 5)
+
+- **What it shows:** the first 5 episodes of seed 0 in the Meshcat browser view, slowed down to 0.1 s per AUV step, with a pause after each episode. Mode 5 asks for deterministic (`d`) or sampled (`s`) actions. The settings are at the top of the script (`STEP_DELAY`, `WATCH_EPISODES`, `OPTION_COLORS`).
+- **Top left:** the sub-agent in control. The AUV's trail has the same color: green for space exploration, pink for plume, yellow for border.
+- **Gas cloud:** colored by what the coverage counts as plume and border, with a legend in the bottom left:
+  - pale cyan: plume only (above 0.45);
+  - light purple: plume and border (0.30 to 0.45);
+  - dark purple: border only (0.15 to 0.30).
+- **Window shape:** keep the browser window at least 1.5 times as wide as it is high, or the labels are cut off.
 
 ## Run 5: HRL meta agent variants
 
