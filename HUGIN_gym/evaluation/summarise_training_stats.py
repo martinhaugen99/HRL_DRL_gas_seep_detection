@@ -5,6 +5,12 @@ each run folder and reports the mean ± std over the last training episodes. Run
 share algorithm and tag (the folder name without the job ID) get an extra row with the
 mean ± std of their run means.
 
+"Ended early" is the share of episodes shorter than the episode length limit. It is "-"
+for HRL runs with several option lengths (HRL_VARIANT in training_config.json): their
+survey budget in AUV steps can end an episode before the limit in decisions, so the
+length does not show whether the episode reached its goal. Use hrl/ended_early in
+TensorBoard for these runs.
+
 Run from the repository root, e.g.:
     .venv/bin/python -m HUGIN_gym.evaluation.summarise_training_stats \
         ../trained-agents/*_compare_42235* --last 1000
@@ -20,18 +26,33 @@ import numpy as np
 ENDED_EARLY = "Ended early (%)"
 
 
-def load_run(run_dir: Path) -> tuple[dict, int]:
-    """Return the episode stats and the maximum episode length of one run folder."""
+def ended_early_limit(config: dict) -> int | None:
+    """The episode length limit that shows whether an episode ended early, or None.
+
+    None for HRL runs with several option lengths: an episode of mostly long options
+    uses up the survey budget in AUV steps with fewer decisions than the limit.
+    """
+    option_lengths = (config.get("HRL_VARIANT") or {}).get("option_lengths", [])
+    if len(option_lengths) > 1:
+        return None
+    return config["ENVIRONMENT"]["max_episode_length"]
+
+
+def load_run(run_dir: Path) -> tuple[dict, int | None]:
+    """Return the episode stats and the ended-early length limit of one run folder."""
     with (run_dir / "training_stats.pkl").open("rb") as f:
         stats = pickle.load(f)
     config = json.loads((run_dir / "training_config.json").read_text())
-    return stats, config["ENVIRONMENT"]["max_episode_length"]
+    return stats, ended_early_limit(config)
 
 
 def episode_metrics(
-    stats: dict, max_episode_length: int, last: int
+    stats: dict, max_episode_length: int | None, last: int
 ) -> dict[str, np.ndarray]:
-    """Per-episode metrics of the last `last` episodes, each stats list sliced on its own."""
+    """Per-episode metrics of the last `last` episodes, each stats list sliced on its own.
+
+    Ended early has no values when max_episode_length is None.
+    """
     lengths = np.asarray(stats["episode_lengths"][-last:], dtype=float)
     return {
         "Total reward": np.array([sum(r) for r in stats["episode_rewards"][-last:]]),
@@ -40,7 +61,11 @@ def episode_metrics(
         "Plume coverage (%)": 100
         * np.asarray(stats["episode_counter_above_threshold"][-last:], float),
         # the plume agent only ends early when it reaches its plume coverage goal
-        ENDED_EARLY: 100 * (lengths < max_episode_length),
+        ENDED_EARLY: (
+            np.array([])
+            if max_episode_length is None
+            else 100 * (lengths < max_episode_length)
+        ),
     }
 
 
@@ -103,7 +128,9 @@ def main() -> None:
             rows.append([f"`{run_name}`", f"{n_episodes:,}", *cells])
         if len(runs) > 1:
             run_means = {
-                name: np.array([m[name].mean() for _, m in runs.values()])
+                name: np.array(
+                    [m[name].mean() for _, m in runs.values() if m[name].size]
+                )
                 for name in metric_names
             }
             cells = [f"**{format_mean_std(v)}**" for v in run_means.values()]
