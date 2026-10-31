@@ -36,7 +36,7 @@ The plots come from [training_data_visualiser.py](../HUGIN_gym/evaluation/traini
 | 2 | `compare` | 4223550, 4223553, 4223557 | 2026-09-26 13:35–13:49 | `961f7a2` | Same task, budget and network size for all three algorithms; start near the plume; random plume size; less DQN exploration. 3 repeats | Finished |
 | 3 | `compare_100M` | 4259604, 4259607, 4259610; resumed as 4272086, 4272088, 4272091 | 2026-10-04 22:31 – 2026-10-05 05:05 | `10e4023`; resumed with `bf7e7fc` | 10× the steps, 24 envs, 460-step episodes, 128 × 128 networks. 3 repeats | Finished; 8 of 9 runs resumed after a full disk quota |
 | 4 | `untuned` (HRL) | 4363368; resumed as 4367840, 4371199 | 2026-10-28 15:13 | `56ba1c7` | First training of the HRL meta agent, with the settings from the thesis code | Finished 2026-10-30 01:23; hit the 12 h limit twice and was resumed |
-| 5 | `minimal`, `minimal_values`, `duration`, `duration_mean`, `minimal_values_duration` (HRL) | 4371279, 4371280, 4371281, 4371282, 4371283 | 2026-10-29 22:58 | `152ba0a` | The meta agent chooses how many steps a sub-agent runs; smaller meta states; sub-agent value estimates | Running |
+| 5 | `minimal`, `minimal_values`, `duration`, `duration_mean`, `minimal_values_duration` (HRL) | 4371279, 4371280, 4371281, 4371282, 4371283 | 2026-10-29 22:58 | `152ba0a` | The meta agent chooses how many steps a sub-agent runs; smaller meta states; sub-agent value estimates | Finished 2026-10-30 14:29 – 2026-10-31 08:50, each in one job |
 
 "Started" is `RUN_INFO.timestamp` in `training_config.json`. "Code" is the last commit before the run started. From run 3 on, it is the commit checked out on Fox when the job started (`git reflog --date=iso` on Fox).
 
@@ -547,7 +547,7 @@ Mean ± std over the 1,000 test episodes, next to the last 1,000 training episod
 
 - **Code:** `152ba0a` (2026-10-29 22:54), pulled on Fox at 22:55. The code changes are in the four commits before it (`92c4352`, `af15f11`, `36c770f`, `28d07d3`). `152ba0a` itself only adds this documentation.
 - **Fox resources:** 16 CPUs, 32 GB per run. 30 h limit for the 3-step variants. 54 h for the duration variants, because their 10M decisions can be up to 50M AUV steps.
-- **Status:** running. At the speed of run 4, the 3-step variants should finish around 2026-10-31 02:00. The duration variants need 18–45 h, depending on how often they choose 5 steps, so they finish between about 2026-10-30 17:00 and 2026-11-01 20:00.
+- **Status:** finished. All five jobs completed in one job each, without a resume, after 10,002,432 decisions. The first finished on 2026-10-30 14:29 (`minimal_values_duration`), the last on 2026-10-31 08:50 (`duration_mean`). The final models are `HRL_PPO_scratch.zip` in the run folders. See [Jobs](#jobs) and the results below.
 
 ### In short: what each variant does
 
@@ -635,14 +635,387 @@ Each comparison changes one thing:
   | `rollout/ep_rew_mean`, `rollout/ep_len_mean` | Mean reward and decisions of the last 100 episodes |
 
 - **Do not compare the reward between variants.** The cost per decision and the mean reward change its scale. Compare `hrl/ended_early`, `hrl/episode_steps`, and the visited and plume coverage from the stats.
-- **Episode length:** it counts decisions, and in the duration variants a decision is 2–5 AUV steps, so use `hrl/episode_steps`. For the same reason, "Ended early" from `summarise_training_stats.py` (length below the decision limit) is wrong for the duration variants. Use `hrl/ended_early`.
+- **Episode length:** it counts decisions, and in the duration variants a decision is 2–5 AUV steps, so use `hrl/episode_steps`. For the same reason, the episode length does not show whether a duration variant ended early, so `summarise_training_stats.py` prints "-" for "Ended early" in runs with several option lengths. Use `hrl/ended_early`.
 - **The x-axis in TensorBoard counts decisions.** The duration variants make fewer decisions per AUV step, and `hrl/option_length` converts between the two.
 - **One run per variant:** a difference smaller than the spread between repeats cannot be trusted. Repeat the promising variants with 2–3 runs.
 - **Do not stop a run because its curve is flat.** Run 4 was flat for almost 4M decisions before it improved again.
 
+### Jobs
+
+All five jobs started on 2026-10-29 at 22:58:04 and completed without a resume.
+
+| Variant | Job | Node | Slurm end | Elapsed | Decisions/s | AUV steps | AUV steps/s | CPU use | Peak memory |
+|---|---|---|---|---|---|---|---|---|---|
+| `minimal` | 4371279 | c1-9 | 2026-10-30 22:32 | 23:34:10 | 118 | 29.9M | 353 | 34 % | 7.0 GiB |
+| `minimal_values` | 4371280 | c1-8 | 2026-10-30 21:52 | 22:54:31 | 121 | 29.9M | 363 | 36 % | 7.1 GiB |
+| `duration` | 4371281 | c1-8 | 2026-10-30 21:23 | 22:25:28 | 124 | 24.0M | 298 | 31 % | 7.1 GiB |
+| `duration_mean` | 4371282 | c1-8 | 2026-10-31 08:50 | 1-09:52:03 | 82 | 40.0M | 328 | 36 % | 7.1 GiB |
+| `minimal_values_duration` | 4371283 | c1-8 | 2026-10-30 14:29 | 15:31:14 | 179 | 20.7M | 371 | 39 % | 7.0 GiB |
+
+- **Sources:** the Slurm times, the state, the node, the CPU time (`TotalCPU`) and the peak memory (`MaxRSS` of the batch step) come from `sacct`. Each Slurm log ends with "Job <ID> completed at …".
+- **How the columns are computed:**
+  - **Decisions/s:** from `RUN_INFO.timestamp` to the time the final model was saved. Each run made 10,002,432 decisions.
+  - **AUV steps:** `hrl/option_length` times the 6,144 decisions of each PPO update (12 envs × 512), summed over the updates.
+  - **CPU use:** `TotalCPU` divided by 16 × the elapsed time.
+- **The time follows the AUV steps, not the decisions:** all five ran 300–370 AUV steps per second.
+  - `duration_mean` took the longest (33.9 h), because its options ran the most AUV steps (40.0M, about 4 per decision).
+  - `minimal_values_duration` was the fastest (15.5 h), because it chose almost only 2-step options (20.7M AUV steps).
+  - Before the runs, the duration variants were expected to take 18–45 h. They took 15.5–33.9 h, well within their 54 h limit.
+- **The minimal meta state does not make the decisions faster:** `minimal` and `minimal_values` made 118 and 121 decisions per second, within the 103–125 of run 4. This was expected, because most of the time per decision goes to the GP update and the sub-agents.
+- **Resources:** 31–39 % of the 16 CPUs and at most 7.1 GiB of the 32 GiB requested, as in run 4.
+
 ### Results
 
-To be added when the runs have finished.
+Mean ± std over the last 1,000 training episodes. `untuned` is run 4.
+
+| Variant | Episodes | Ended early (%) | AUV steps | Decisions | Visited (%) | True plume coverage (%) | Total reward |
+|---|---|---|---|---|---|---|---|
+| `untuned` | 76,478 | 86.2 | ≈ 366 | 122.0 ± 22.0 | 77.0 ± 5.5 | 96.0 ± 10.8 | -162.8 ± 163.2 |
+| `minimal` | 78,498 | 83.5 | 371 | 123.7 ± 22.1 | 76.3 ± 7.8 | 95.2 ± 9.3 | -190.2 ± 230.1 |
+| `minimal_values` | 82,307 | 89.2 | 346 | 115.7 ± 21.8 | 76.5 ± 7.8 | 96.7 ± 6.9 | -141.6 ± 241.3 |
+| `duration` | 60,578 | 86.5 | 367 | 124.7 ± 27.1 | 76.7 ± 6.6 | 96.3 ± 10.7 | -160.7 ± 168.8 |
+| `duration_mean` | 101,103 | 81.1 | 389 | 93.9 ± 20.3 | 87.5 ± 6.4 | 92.2 ± 9.0 | -40.1 ± 73.8 |
+| `minimal_values_duration` | 55,320 | 89.5 | 352 | 168.7 ± 31.8 | 75.9 ± 8.5 | 96.9 ± 8.2 | -136.4 ± 217.6 |
+
+- **Ended early (%)** and **AUV steps** (per episode) come from `hrl/ended_early` and `hrl/episode_steps` in TensorBoard. Each value is the mean over the PPO updates of the last 1,000 episodes (16–28 updates), so it has no std.
+  - Run 4 logged neither. Its "Ended early" comes from the stats, which is correct for 3-step options. Its AUV steps are 3 × the decisions. For `minimal`, 3 × the decisions gives 371.1, against 370.7 from TensorBoard.
+  - For `minimal` and `minimal_values`, the stats give 83.5 % and 89.1 % ended early, against 83.5 % and 89.2 % from TensorBoard.
+- **Decisions, Visited, True plume coverage and Total reward** come from `summarise_training_stats.py`.
+- **Total reward** can only be compared between variants with the same reward:
+  - `untuned`, `minimal` and `minimal_values`: sum of the step rewards, no cost per decision.
+  - `duration` and `minimal_values_duration`: sum, with a cost of 0.1 per decision.
+  - `duration_mean`: mean of the step rewards. It cannot be compared with any other variant.
+
+![HRL PPO minimal 4371279](training_runs/HRL_PPO_minimal_4371279/training_stats.png)
+
+![HRL PPO minimal_values 4371280](training_runs/HRL_PPO_minimal_values_4371280/training_stats.png)
+
+![HRL PPO duration 4371281](training_runs/HRL_PPO_duration_4371281/training_stats.png)
+
+![HRL PPO duration_mean 4371282](training_runs/HRL_PPO_duration_mean_4371282/training_stats.png)
+
+![HRL PPO minimal_values_duration 4371283](training_runs/HRL_PPO_minimal_values_duration_4371283/training_stats.png)
+
+- **Plot panels:** as in run 4. "Episode Length" counts decisions, which are 2–5 AUV steps in the duration variants. "Steps Around Threshold (%)" is the true border coverage, and "Steps Above Threshold (%)" the true plume coverage.
+
+#### Learning curves
+
+Each row is the mean over the episodes that ended in that million decisions: row 1M covers decisions 0 to 1M, row 2M covers 1M to 2M, and so on. The values from TensorBoard are the mean over the PPO updates in that million.
+
+- **Rows by decisions:** the duration variants run more AUV steps per decision (see the last table), so at the same row they have trained on more AUV steps.
+- **`untuned`:** its column uses the same method, so it differs slightly from the run 4 table, which splits the episodes into 20 groups of equal size.
+
+**Ended early (%)**, from `hrl/ended_early` (`untuned`: from the stats):
+
+| Up to decision | `untuned` | `minimal` | `minimal_values` | `duration` | `duration_mean` | `minimal_values_duration` |
+|---|---|---|---|---|---|---|
+| 1M | 52.6 | 57.5 | 62.4 | 33.9 | 56.9 | 56.4 |
+| 2M | 72.6 | 79.1 | 77.4 | 58.4 | 72.0 | 69.8 |
+| 3M | 79.4 | 82.1 | 85.1 | 64.4 | 75.1 | 79.3 |
+| 4M | 78.3 | 81.1 | 86.7 | 66.0 | 77.7 | 83.8 |
+| 5M | 78.5 | 83.3 | 88.4 | 73.9 | 78.3 | 86.6 |
+| 6M | 73.5 | 83.6 | 88.7 | 79.9 | 79.2 | 87.4 |
+| 7M | 75.7 | 82.7 | 89.3 | 82.9 | 80.5 | 87.7 |
+| 8M | 81.3 | 84.2 | 89.3 | 84.3 | 80.8 | 88.9 |
+| 9M | 84.3 | 84.0 | 89.7 | 83.9 | 80.2 | 89.3 |
+| 10M | 85.3 | 83.4 | 89.8 | 85.8 | 81.1 | 89.3 |
+
+**AUV steps per episode**, from `hrl/episode_steps` (`untuned`: 3 × the decisions):
+
+| Up to decision | `untuned` | `minimal` | `minimal_values` | `duration` | `duration_mean` | `minimal_values_duration` |
+|---|---|---|---|---|---|---|
+| 1M | 432 | 426 | 422 | 458 | 425 | 432 |
+| 2M | 400 | 388 | 392 | 428 | 400 | 406 |
+| 3M | 392 | 381 | 370 | 415 | 398 | 392 |
+| 4M | 394 | 377 | 364 | 418 | 395 | 380 |
+| 5M | 393 | 376 | 357 | 404 | 394 | 366 |
+| 6M | 397 | 376 | 354 | 388 | 393 | 364 |
+| 7M | 393 | 377 | 351 | 381 | 392 | 362 |
+| 8M | 381 | 375 | 350 | 377 | 392 | 357 |
+| 9M | 376 | 374 | 348 | 376 | 392 | 351 |
+| 10M | 369 | 374 | 346 | 371 | 391 | 352 |
+
+**Visited (%)**:
+
+| Up to decision | `untuned` | `minimal` | `minimal_values` | `duration` | `duration_mean` | `minimal_values_duration` |
+|---|---|---|---|---|---|---|
+| 1M | 79.8 | 78.3 | 78.4 | 74.2 | 82.1 | 76.9 |
+| 2M | 84.0 | 77.9 | 78.3 | 76.9 | 86.3 | 79.0 |
+| 3M | 87.3 | 77.1 | 77.4 | 79.1 | 86.9 | 77.2 |
+| 4M | 87.4 | 77.2 | 76.8 | 77.2 | 87.3 | 76.6 |
+| 5M | 87.2 | 77.0 | 76.6 | 76.9 | 87.4 | 76.3 |
+| 6M | 85.5 | 76.7 | 76.4 | 76.7 | 87.4 | 76.2 |
+| 7M | 78.2 | 76.6 | 76.4 | 76.6 | 87.6 | 76.0 |
+| 8M | 77.8 | 76.3 | 76.4 | 76.5 | 87.5 | 76.1 |
+| 9M | 77.1 | 76.4 | 76.4 | 76.6 | 87.6 | 76.1 |
+| 10M | 77.2 | 76.3 | 76.4 | 76.5 | 87.5 | 76.0 |
+
+**True plume coverage (%)**. It is missing for 0.6–2.5 % of the episodes, so its rows line up only roughly with the decisions:
+
+| Up to decision | `untuned` | `minimal` | `minimal_values` | `duration` | `duration_mean` | `minimal_values_duration` |
+|---|---|---|---|---|---|---|
+| 1M | 88.9 | 89.8 | 91.9 | 88.4 | 89.5 | 91.7 |
+| 2M | 91.5 | 93.9 | 93.7 | 91.2 | 91.2 | 92.9 |
+| 3M | 92.1 | 95.1 | 95.6 | 90.6 | 91.6 | 94.8 |
+| 4M | 92.1 | 94.5 | 96.3 | 92.0 | 91.9 | 95.7 |
+| 5M | 92.2 | 95.1 | 96.6 | 93.8 | 92.0 | 96.8 |
+| 6M | 91.6 | 95.1 | 96.8 | 95.3 | 92.1 | 96.8 |
+| 7M | 93.7 | 94.8 | 97.0 | 96.1 | 92.3 | 96.8 |
+| 8M | 95.3 | 95.5 | 97.1 | 96.5 | 92.3 | 97.0 |
+| 9M | 96.0 | 95.3 | 97.0 | 96.2 | 92.2 | 97.1 |
+| 10M | 96.3 | 95.5 | 96.9 | 96.4 | 92.3 | 97.1 |
+
+**Total reward** (compare only between variants with the same reward, see above):
+
+| Up to decision | `untuned` | `minimal` | `minimal_values` | `duration` | `duration_mean` | `minimal_values_duration` |
+|---|---|---|---|---|---|---|
+| 1M | -366.5 | -339.1 | -328.2 | -371.4 | -135.1 | -321.0 |
+| 2M | -303.1 | -227.2 | -241.7 | -296.9 | -83.2 | -266.1 |
+| 3M | -302.9 | -206.7 | -182.4 | -298.4 | -65.0 | -210.6 |
+| 4M | -306.9 | -204.2 | -166.0 | -277.8 | -54.6 | -178.4 |
+| 5M | -305.6 | -194.0 | -152.2 | -242.9 | -51.7 | -163.6 |
+| 6M | -306.9 | -190.6 | -149.5 | -205.0 | -47.1 | -156.3 |
+| 7M | -244.9 | -197.0 | -143.6 | -193.0 | -41.4 | -151.2 |
+| 8M | -207.9 | -191.3 | -142.5 | -184.6 | -43.0 | -139.7 |
+| 9M | -187.2 | -192.9 | -138.0 | -185.8 | -41.5 | -132.4 |
+| 10M | -175.4 | -193.3 | -137.7 | -169.9 | -39.3 | -134.6 |
+
+**Policy entropy**, minus `train/entropy_loss`. A uniform choice gives 1.10 with 3 actions and 1.79 with the 6 actions of the duration variants:
+
+| Up to decision | `untuned` | `minimal` | `minimal_values` | `duration` | `duration_mean` | `minimal_values_duration` |
+|---|---|---|---|---|---|---|
+| 1M | 0.75 | 0.80 | 0.74 | 1.08 | 1.16 | 0.93 |
+| 2M | 0.29 | 0.48 | 0.55 | 0.87 | 0.88 | 0.56 |
+| 3M | 0.03 | 0.42 | 0.37 | 0.95 | 0.65 | 0.57 |
+| 4M | 0.04 | 0.38 | 0.31 | 0.99 | 0.48 | 0.48 |
+| 5M | 0.05 | 0.38 | 0.27 | 0.92 | 0.45 | 0.39 |
+| 6M | 0.16 | 0.39 | 0.24 | 0.80 | 0.39 | 0.37 |
+| 7M | 0.52 | 0.39 | 0.23 | 0.93 | 0.26 | 0.35 |
+| 8M | 0.45 | 0.39 | 0.20 | 0.98 | 0.37 | 0.30 |
+| 9M | 0.40 | 0.38 | 0.19 | 1.04 | 0.29 | 0.26 |
+| 10M | 0.36 | 0.37 | 0.18 | 1.01 | 0.37 | 0.25 |
+
+**Explained variance** of the value function, from `train/explained_variance`:
+
+| Up to decision | `untuned` | `minimal` | `minimal_values` | `duration` | `duration_mean` | `minimal_values_duration` |
+|---|---|---|---|---|---|---|
+| 1M | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 |
+| 2M | 0.00 | 0.00 | 0.28 | 0.00 | 0.41 | 0.52 |
+| 3M | 0.27 | 0.00 | 0.55 | 0.29 | 0.54 | 0.74 |
+| 4M | 0.80 | 0.00 | 0.58 | 0.84 | 0.57 | 0.74 |
+| 5M | 0.80 | 0.00 | 0.58 | 0.82 | 0.59 | 0.71 |
+| 6M | 0.75 | 0.00 | 0.59 | 0.78 | 0.63 | 0.72 |
+| 7M | 0.66 | 0.00 | 0.59 | 0.73 | 0.65 | 0.73 |
+| 8M | 0.64 | 0.00 | 0.62 | 0.71 | 0.65 | 0.73 |
+| 9M | 0.63 | 0.00 | 0.63 | 0.69 | 0.66 | 0.75 |
+| 10M | 0.63 | 0.00 | 0.64 | 0.68 | 0.69 | 0.75 |
+
+**Option length** (mean AUV steps per decision), from `hrl/option_length`. It is 3.0 for the other variants:
+
+| Up to decision | `duration` | `duration_mean` | `minimal_values_duration` |
+|---|---|---|---|
+| 1M | 2.09 | 2.79 | 2.15 |
+| 2M | 2.05 | 3.54 | 2.03 |
+| 3M | 2.23 | 4.08 | 2.04 |
+| 4M | 2.16 | 4.25 | 2.05 |
+| 5M | 2.19 | 4.21 | 2.06 |
+| 6M | 2.21 | 4.21 | 2.07 |
+| 7M | 2.50 | 4.33 | 2.07 |
+| 8M | 2.69 | 4.18 | 2.07 |
+| 9M | 2.95 | 4.27 | 2.08 |
+| 10M | 2.94 | 4.13 | 2.08 |
+
+#### Choices of the meta agent
+
+Share of the decisions in each third of the survey that chose each action, from `hrl_choice_<phase>/<action>`. The values are means over the PPO updates of the last 1,000 episodes. Run 4 did not log the choices.
+
+3-step variants, as space / plume / border:
+
+| Variant | First third | Middle third | Last third |
+|---|---|---|---|
+| `minimal` | 0.55 / 0.16 / 0.30 | 0.90 / 0.03 / 0.06 | 0.94 / 0.02 / 0.05 |
+| `minimal_values` | 0.68 / 0.15 / 0.17 | 0.97 / 0.02 / 0.01 | 1.00 / 0.00 / 0.00 |
+
+Duration variants:
+
+| Variant | Third | `space_2` | `space_5` | `plume_2` | `plume_5` | `border_2` | `border_5` |
+|---|---|---|---|---|---|---|---|
+| `duration` | First | 0.27 | 0.23 | 0.18 | 0.04 | 0.23 | 0.05 |
+| | Middle | 0.51 | 0.36 | 0.05 | 0.01 | 0.06 | 0.01 |
+| | Last | 0.58 | 0.36 | 0.02 | 0.00 | 0.03 | 0.01 |
+| `duration_mean` | First | 0.18 | 0.82 | 0.00 | 0.00 | 0.00 | 0.00 |
+| | Middle | 0.21 | 0.79 | 0.00 | 0.00 | 0.00 | 0.00 |
+| | Last | 0.37 | 0.63 | 0.00 | 0.00 | 0.00 | 0.00 |
+| `minimal_values_duration` | First | 0.68 | 0.00 | 0.05 | 0.06 | 0.20 | 0.01 |
+| | Middle | 0.96 | 0.00 | 0.01 | 0.01 | 0.02 | 0.00 |
+| | Last | 0.98 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 |
+
+#### The value function of `minimal` did not learn
+
+- **In training:** the explained variance of `minimal` stayed between −0.004 and 0.001 for all 10M decisions, and its value loss did not go down (2,814 at the first update, 2,753 at the last).
+- **In the saved model:**
+  - The critic gives the same value, −122.3, for every meta state. Over 2,000 random meta states its std is 0.001, while the action probabilities change with the state.
+  - All 64 units of the critic's second hidden layer are saturated (|tanh| > 0.999) in every one of these states, so no gradient passes through them.
+  - In `minimal_values`, which has the same network, no unit is saturated.
+- **Effect:** PPO trained the `minimal` policy with a constant baseline instead of a learned value. So `minimal` shows what the 6 numbers reach without a working critic, not what they can reach.
+- **Cause:** the runs do not show why this happened in `minimal` and not in `minimal_values`. A repeat of `minimal` would show whether it happens again.
+
+#### Observations
+
+All results are from one run per variant and from training episodes with sampled actions. A difference of a few points can be within the spread between repeats. The comparisons follow the table in [The variants](#the-variants).
+
+- **`minimal` against `untuned` (the small meta state):**
+  - **At the end:** `minimal` came close to `untuned` without reaching it: 83.5 % against 86.2 % ended early, about the same number of AUV steps (371 and about 366) and plume coverage (95.2 % and 96.0 %).
+  - **Speed of learning:** `minimal` learned faster at first (79.1 % against 72.6 % ended early at 2M). It was flat at 81–84 % from 3M on. `untuned` passed it only after 8M, in its second improvement.
+  - **Caveat:** its critic did not learn (see above), so this comparison is not fair to the minimal state.
+- **`minimal_values` against `minimal` (the sub-agent values):**
+  - **At the end:** `minimal_values` was clearly better: 89.2 % against 83.5 % ended early, 346 against 371 AUV steps, and 96.7 % against 95.2 % plume coverage. It is also better than `untuned` (86.2 %, about 366 AUV steps) and the best variant in training, together with `minimal_values_duration`.
+  - **Caveat:** its critic learned (explained variance 0.64 at the end) and the one of `minimal` did not. The runs cannot separate the effect of the sub-agent values from the effect of a working critic.
+  - **Policy:** it ends with the lowest entropy (0.18). In the last third of the survey it always chooses space exploration.
+- **`duration` against `untuned` (choosing the option length):**
+  - **At the end:** the same result as `untuned`: 86.5 % against 86.2 % ended early, 367 against about 366 AUV steps, 96.3 % against 96.0 % plume coverage.
+  - **Speed of learning:** `duration` learned more slowly at first (58.4 % against 72.6 % ended early at 2M), and caught up at about 6M.
+  - **Long options:** in the first 1M decisions it chose a 5-step option in 4 % of the decisions. At the end it chose one in 32 % of the decisions in the first third of the survey, 38 % in the middle and 37 % in the last third, almost all `space_5`. The option length went up from 2.2 AUV steps at 6M to 2.9 at the end.
+  - **Question 1:** the meta agent does learn to run space exploration for 5 steps, but more in the middle and the end of the survey (0.36 of the decisions) than at the start (0.23). In the first third, half of its decisions go to the plume and border sub-agents. The full meta state has no time input (see [Minimal meta states](#minimal-meta-states-minimal-minimal_values-minimal_values_duration)), so the agent can only tell the survey phase from the coverages.
+  - **Policy:** it is still fairly random at the end: entropy 1.01, the highest of all variants (the maximum is 1.79). Its deterministic actions do much worse than its sampled ones: 33 % against 86 % ended early (see [Evaluation of the trained agents](#evaluation-of-the-trained-agents)).
+- **`duration_mean` against `duration` (the mean reward):**
+  - **Long options, as expected:** it chose the 5-step options much more (4.1 against 2.9 AUV steps per decision).
+  - **Only the space agent, which was not expected:** at the end it used only the space exploration sub-agent. Plume and border got 0.00 of the decisions in all three thirds, against 0.24 in the first 1M decisions.
+  - **Result:** it visited the most of the map (87.5 %), but had the lowest true plume coverage (92.3 %) and the lowest share that ended early (81.1 %). Its episodes were the longest (389 AUV steps).
+  - **Cause:** the runs do not show why it stopped using the plume and border agents.
+- **`minimal_values_duration` against `minimal_values` and `duration` (both ideas together):**
+  - **Hardly any long options:** at the end it chose a 5-step option in 7 % of the decisions in the first third (mostly `plume_5`) and in 1 % or less later. The option length stayed at 2.1 AUV steps. In effect it is `minimal_values` with 2-step options.
+  - **Result:** the same as `minimal_values`: 89.5 % against 89.2 % ended early, 352 against 346 AUV steps, 97.1 % against 96.7 % plume coverage. It is better than `duration` (86.5 %, 367 AUV steps).
+  - **Value function:** the highest explained variance of all variants (0.75 at the end).
+  - **Cause:** the runs do not show why, with the minimal state, the meta agent did not use the long options that `duration` uses.
+- **Summary for the two questions:**
+  1. With the sum reward and the full meta state, the meta agent learns to run space exploration for 5 steps in about a third of its decisions, mostly after the start of the survey. It does no better than `untuned`. With the minimal state it hardly uses the long options. With the mean reward it uses long space options almost only, and does worse.
+  2. Six numbers and the three sub-agent values were enough to do better than the full meta state of 158 inputs (89.2 % against 86.2 % ended early). Six numbers alone reached 83.5 %, but with a critic that did not learn.
+- **Before ranking the variants:** repeats of the promising variants are needed. The evaluation with sampled and deterministic actions is below.
+
+### Evaluation of the trained agents
+
+On 2026-10-31 the five final models were tested on 1,000 new episodes each with [test_HRL(ppo).py](<../HUGIN_gym/evaluation/test_HRL(ppo).py>), with sampled (mode 4) and deterministic (mode 1) actions, as in run 4 (see [Evaluation of the trained agent](#evaluation-of-the-trained-agent)).
+
+- **Test env:** the same as in run 4. The script reads `HRL_VARIANT` from each run's `training_config.json` (`hrl_variant_from_config` in [io.py](../HUGIN_gym/utils/io.py)), so each model is tested with its own actions, meta state and reward, and with the 480-step survey budget.
+- **Same episodes:** seed 0, as in run 4, so all models and modes get the same 1,000 episodes.
+- **Code:** `822156c`, plus the `--model` and `--mode` arguments of the script, which are not yet committed. `822156c` disables the turn penalty in the border sub-agent's reward. This does not change the results: the sub-agents are already trained, and the meta agent's reward only takes the goal bonus (+40) and the penalty for leaving the map (−4) from the base env ([HRL_env.py](../HUGIN_gym/envs/HRL_env.py)).
+- **Run with** the following command from the repository root, once per run folder and mode (on Windows: `.venv/Scripts/python`):
+
+  ```bash
+  PYTHONPATH=. .venv/bin/python "HUGIN_gym/evaluation/test_HRL(ppo).py" --model ../trained-agents/<run>/HRL_PPO_scratch.zip --mode 4
+  ```
+
+**Ended early (%)** (`SUCCESS_RATE`), next to the last 1,000 training episodes and the policy entropy in the last 1M training decisions (see [Learning curves](#learning-curves)):
+
+| Variant | Training | Sampled (mode 4) | Deterministic (mode 1) | Sampled − deterministic | Entropy at the end of training |
+|---|---|---|---|---|---|
+| `untuned` | 86.2 | 86 | 51 | 35 | 0.36 |
+| `minimal` | 83.5 | 85 | 59 | 26 | 0.37 |
+| `minimal_values` | 89.2 | 89 | 86 | 3 | 0.18 |
+| `duration` | 86.5 | 86 | 33 | 53 | 1.01 |
+| `duration_mean` | 81.1 | 82 | 83 | -1 | 0.37 |
+| `minimal_values_duration` | 89.5 | 91 | 77 | 14 | 0.25 |
+
+**Sampled actions (mode 4)**, mean ± std over the 1,000 test episodes:
+
+| Variant | Ended early (%) | AUV steps | Decisions | Turns | Visited (%) | True plume coverage (%) | True border coverage (%) | Total reward |
+|---|---|---|---|---|---|---|---|---|
+| `untuned` | 86 | 376.7 ± 61.6 | 125.9 ± 20.5 | 113.8 ± 39.8 | 76 ± 6 | 97.1 ± 9.4 | 95.7 ± 8.7 | -173.9 ± 158.1 |
+| `minimal` | 85 | 365.2 ± 65.6 | 122.0 ± 21.8 | 106.7 ± 38.1 | 76 ± 7 | 94.7 ± 11.2 | 94.9 ± 10.2 | -173.9 ± 213.2 |
+| `minimal_values` | 89 | 344.8 ± 65.1 | 115.2 ± 21.6 | 87.4 ± 40.3 | 76 ± 8 | 96.9 ± 7.3 | 96.1 ± 6.8 | -145.1 ± 261.6 |
+| `duration` | 86 | 368.4 ± 64.6 | 125.2 ± 26.6 | 106.6 ± 38.8 | 77 ± 6 | 96.6 ± 9.3 | 95.3 ± 8.1 | -166.0 ± 169.9 |
+| `duration_mean` | 82 | 392.3 ± 69.5 | 93.8 ± 20.3 | 68.7 ± 19.6 | 88 ± 6 | 92.6 ± 8.7 | 91.7 ± 7.6 | -39.3 ± 65.6 |
+| `minimal_values_duration` | 91 | 344.7 ± 62.3 | 165.1 ± 31.0 | 89.4 ± 34.0 | 76 ± 7 | 97.2 ± 6.3 | 96.1 ± 6.2 | -122.0 ± 188.1 |
+
+**Deterministic actions (mode 1)**, mean ± std over the 1,000 test episodes:
+
+| Variant | Ended early (%) | AUV steps | Decisions | Turns | Visited (%) | True plume coverage (%) | True border coverage (%) | Total reward |
+|---|---|---|---|---|---|---|---|---|
+| `untuned` | 51 | 403.6 ± 83.5 | 134.7 ± 27.7 | 194.1 ± 140.6 | 55 ± 27 | 95.5 ± 12.8 | 93.6 ± 12.0 | -396.6 ± 418.2 |
+| `minimal` | 59 | 411.6 ± 73.4 | 137.4 ± 24.3 | 133.4 ± 77.0 | 77 ± 13 | 88.1 ± 13.7 | 96.5 ± 11.6 | -347.6 ± 290.2 |
+| `minimal_values` | 86 | 340.6 ± 73.7 | 113.8 ± 24.5 | 95.3 ± 80.8 | 73 ± 13 | 96.5 ± 9.5 | 95.7 ± 8.7 | -152.9 ± 323.5 |
+| `duration` | 33 | 428.4 ± 79.0 | 205.1 ± 43.0 | 230.9 ± 140.0 | 44 ± 27 | 93.3 ± 18.0 | 89.2 ± 16.1 | -375.9 ± 359.9 |
+| `duration_mean` | 83 | 391.7 ± 69.2 | 90.8 ± 20.0 | 68.4 ± 19.6 | 88 ± 6 | 92.9 ± 8.3 | 91.9 ± 7.4 | -31.7 ± 59.8 |
+| `minimal_values_duration` | 77 | 361.7 ± 81.7 | 178.7 ± 40.8 | 109.7 ± 82.9 | 75 ± 12 | 91.7 ± 13.4 | 96.6 ± 9.5 | -163.4 ± 226.8 |
+
+**The GP map at the end of the episode**, as sampled / deterministic:
+
+| Variant | Plume coverage of the GP map (%) | Border coverage of the GP map (%) | RMSE of the GP concentration map | True plume cells found by the GP map (%) |
+|---|---|---|---|---|
+| `untuned` | 98 / 95 | 96 / 93 | 0.0023 / 0.0050 | 99.6 / 99.3 |
+| `minimal` | 95 / 87 | 95 / 95 | 0.0029 / 0.0048 | 99.5 / 99.4 |
+| `minimal_values` | 97 / 97 | 96 / 95 | 0.0021 / 0.0036 | 99.9 / 99.8 |
+| `duration` | 97 / 93 | 95 / 88 | 0.0025 / 0.0072 | 99.9 / 98.4 |
+| `duration_mean` | 93 / 93 | 92 / 93 | 0.0015 / 0.0014 | 99.8 / 99.9 |
+| `minimal_values_duration` | 97 / 92 | 96 / 96 | 0.0021 / 0.0039 | 99.9 / 99.6 |
+
+**Choices** (`CHOICES`), the share of all decisions in the 1,000 episodes. 3-step variants, as space / plume / border:
+
+| Variant | Sampled (mode 4) | Deterministic (mode 1) |
+|---|---|---|
+| `untuned` | 0.74 / 0.12 / 0.14 | 0.48 / 0.34 / 0.18 |
+| `minimal` | 0.75 / 0.09 / 0.16 | 0.71 / 0.01 / 0.29 |
+| `minimal_values` | 0.83 / 0.08 / 0.09 | 0.79 / 0.11 / 0.10 |
+
+Duration variants:
+
+| Variant | Actions | `space_2` | `space_5` | `plume_2` | `plume_5` | `border_2` | `border_5` |
+|---|---|---|---|---|---|---|---|
+| `duration` | Sampled | 0.41 | 0.31 | 0.11 | 0.02 | 0.12 | 0.03 |
+| | Deterministic | 0.27 | 0.03 | 0.53 | 0.00 | 0.16 | 0.00 |
+| `duration_mean` | Sampled | 0.22 | 0.78 | 0.00 | 0.00 | 0.00 | 0.00 |
+| | Deterministic | 0.18 | 0.82 | 0.00 | 0.00 | 0.00 | 0.00 |
+| `minimal_values_duration` | Sampled | 0.85 | 0.00 | 0.03 | 0.03 | 0.09 | 0.01 |
+| | Deterministic | 0.77 | 0.00 | 0.00 | 0.01 | 0.21 | 0.00 |
+
+- **`untuned`:** the numbers come from the run 4 evaluation.
+- **Output lines:** as in the run 4 table. "Ended early" is `SUCCESS_RATE`, "AUV steps" is `STEPS`, "Decisions" is `Options_CHOSEN` and "Visited" is `SPACE`. The plume and border coverages of the GP map are `PLUME` and `BORDER`, and the true coverages are `ACTUAL PLUME` and `ACTUAL BORDER`.
+- **True plume cells found by the GP map:** `TP` / (`TP` + `FN`).
+- **Precision of "Ended early":** the script prints it as a share with two decimals, so it is rounded to 1 point. Its standard error over 1,000 episodes (std / √1,000) is 0.9–1.5 points.
+- **Total reward:** compare it only between variants with the same reward, as listed under the run 5 results above.
+
+**Observations:**
+
+- **Sampled actions reproduce training for all five variants:**
+  - **Ended early:** within 1.5 points of training.
+  - **Episodes:** within 8 AUV steps and 4 decisions.
+  - **Coverage:** within 1 point for the visited share, and within 0.5 points for the true plume coverage.
+  - **Option length** of the duration variants (AUV steps / decisions): 2.94, 4.18 and 2.09 AUV steps per decision, against 2.94, 4.14 and 2.09 from `hrl/option_length` over the last 1,000 training episodes.
+- **Deterministic actions:** the gap to the sampled results is small where the policy was almost deterministic at the end of training, and large where it was still random:
+  - `minimal_values` (entropy 0.18): 3 points;
+  - `minimal_values_duration` (0.25): 14 points;
+  - `minimal` (0.37): 26 points;
+  - `untuned` (0.36): 35 points;
+  - `duration` (1.01): 53 points.
+
+  `duration_mean` (0.37) is the exception, with 83 % against 82 %. In both modes it uses only the space exploration sub-agent, so its randomness is only in the choice between 2 and 5 steps.
+- **`duration` with deterministic actions is the worst result of all:**
+  - **Ended early:** 33 %.
+  - **Coverage:** 44 ± 27 % of the map visited.
+  - **Turns:** 231, against 107 with sampled actions.
+  - **Choices:** `plume_2` in 53 % of the decisions (sampled: 11 %), and a 5-step option in only 3 % (sampled: 36 %).
+
+  This fits the explanation in run 4: in the same situation the deterministic agent always makes the same choice and can repeat the same moves until the budget runs out.
+- **`minimal` and `minimal_values_duration` with deterministic actions hardly use the plume sub-agent:**
+  - **Plume options:** 1 % of the decisions, against 9 % and 6 % with sampled actions.
+  - **True plume coverage:** 88.1 % and 91.7 %, against 94.7 % and 97.2 % with sampled actions.
+  - **Visited share:** almost unchanged (77 % and 75 %).
+
+  So these episodes mostly fail at the plume coverage, not at the map coverage.
+- **`minimal_values` with deterministic actions is the best deterministic result:**
+  - **Ended early:** 86 %, the same as `untuned` and `duration` with sampled actions.
+  - **Episodes:** the fewest AUV steps (341).
+  - **Plume options:** 11 % of the decisions.
+- **`duration_mean`:** the same in both modes.
+  - **Ended early:** 82–83 %.
+  - **Coverage:** the most of the map visited (88 %) and the lowest RMSE (0.0014–0.0015), but the lowest true plume coverage with sampled actions (92.6 %).
+  - **Turns:** the fewest (68).
+- **The GP map finds the plume in all variants and modes:** at least 98.4 % of the true plume cells. `FP` is 0.0024–0.0026, the 4 corner cells, as in run 4.
+- **For the two questions:**
+  1. **Choosing the option length:** the long options of `duration` come from sampling. With sampled actions, 36 % of its decisions are 5-step options. With deterministic actions, only 3 % are, so in the situations the deterministic agent reaches, a 5-step option is rarely the most likely choice. `duration_mean` chooses `space_5` in about 80 % of its decisions in both modes.
+  2. **The minimal meta state:** `minimal_values` is the only variant whose deterministic actions do about as well as its sampled ones (86 % against 89 %). With sampled actions, `minimal_values_duration` (91 %) and `minimal_values` (89 %) are the best. The 2-point difference between them is too small to separate them with 1,000 test episodes and one run per variant.
+- **Which to report:** as in run 4, report the sampled results with the deterministic results next to them, and say which is which.
 
 ### References
 
