@@ -1,4 +1,6 @@
+import argparse
 import time
+from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
@@ -118,7 +120,7 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
 # =========================================================
 # TEST AGENT
 # =========================================================
-model_path_global = "../trained-agents/HRL_PPO_untuned_4363368/HRL_PPO_scratch.zip"#
+DEFAULT_MODEL = Path("../trained-agents/HRL_PPO_untuned_4363368/HRL_PPO_scratch.zip") # run 4, when --model is not given
 
 # The untuned run (run 4) started before the training config saved HRL_VARIANT, so its settings are given here
 # (PRESETS["untuned"] in train_HRL(ppo).py). The later runs read theirs from HRL_VARIANT in training_config.json.
@@ -129,9 +131,10 @@ OPTION_COLORS = [0x00FF00, 0xFF3399, 0xFFD700] # label and trail color per optio
 STEP_DELAY = 0.1 # seconds between AUV steps in the Meshcat view (0 = full speed)
 WATCH_EPISODES = 5 # episodes in the Meshcat view (mode 5)
 
-def test_agent(deterministic: bool = True, episodes: int = 1000, visualise: bool = False):
+def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 1000, visualise: bool = False):
     """
     Run the trained meta agent for a number of episodes and print the mean +- std of the results.
+    model_path: the meta agent model; training_config.json is read from the same folder
     deterministic: the meta agent takes its most likely action (True) or samples it, as in training (False)
     visualise: show the episodes in the Meshcat browser view, slowed down by STEP_DELAY, with a label of the sub-agent
         in control and a pause after each episode
@@ -144,7 +147,7 @@ def test_agent(deterministic: bool = True, episodes: int = 1000, visualise: bool
     SEED = 0 # the env draws the plumes and start positions from np.random at reset, so every evaluation gets the same episodes
 
     # Load config from the same folder
-    config = load_training_config_from_model(model_path_global)
+    config = load_training_config_from_model(model_path)
     kernel_config = config.get("HRL_HYPERPARAMETERS", {}).get("kernel_config", None)
     MULTIPLE_GAUSSIANS = [1,1]#config.get("HRL_HYPERPARAMETERS", {}).get("MULTIPLE_GAUSSIANS", None)
     print(MULTIPLE_GAUSSIANS)
@@ -156,13 +159,13 @@ def test_agent(deterministic: bool = True, episodes: int = 1000, visualise: bool
 
     # Load HIGH-LEVEL model (the one you trained in train.py)
     # CNN reconstruction for downsampling. NOTE: if you did not train an agent yet, you can simply use the CNN defined
-    model = PPO.load(model_path_global)
+    model = PPO.load(model_path)
     try:
-        model = PPO.load(model_path_global)
+        model = PPO.load(model_path)
         cnn=CNN(layers = 3) # the original design was a resulting 4x4 downsampled state space
     except Exception as e:
         print(f"Failed to load model ({e}), using default CNN")
-       
+
         
 
 
@@ -237,7 +240,7 @@ def test_agent(deterministic: bool = True, episodes: int = 1000, visualise: bool
         rmse = np.sqrt(mse)
 
         RMSE_c.append(rmse)
-    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, model {model_path_global}")
+    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, model {model_path}")
     print(f"REWARD = {np.mean(np.array(average_reward)):.2f} +- {np.std(np.array(average_reward)):.2f}")
     action_names = HierarchicalEnv.action_names(OPTION_NAMES, VARIANT["option_lengths"])
     choice_counts = np.bincount(meta_actions, minlength=len(action_names))
@@ -282,15 +285,15 @@ def test_agent(deterministic: bool = True, episodes: int = 1000, visualise: bool
     
 
 
-def validation():
+def validation(model_path: Path):
 
     VISUALISE = False
     GP = True
     VIS_GP = False
     EPISODES = 1000
-    
+
     # Load config from the same folder
-    config = load_training_config_from_model(model_path_global)
+    config = load_training_config_from_model(model_path)
     kernel_config = config.get("HRL_HYPERPARAMETERS", {}).get("kernel_config", None)
     MULTIPLE_GAUSSIANS = config.get("HRL_HYPERPARAMETERS", {}).get("MULTIPLE_GAUSSIANS", None)
     MAX_OPT_LENGTH = 1#config.get("HRL_HYPERPARAMETERS", {}).get("MAX_OPT_LENGTH", None)
@@ -298,7 +301,7 @@ def validation():
     # Load HIGH-LEVEL model (the one you trained in train.py)
     # CNN reconstruction for downsampling. NOTE: if you did not train an agent yet, you can simply use the CNN defined
     try:
-        model = PPO.load(model_path_global)
+        model = PPO.load(model_path)
         cnn=CNN(layers = 3) # the original design was a resulting 4x4 downsampled state space
         print("Loaded CNN from trained DQN model")
     except Exception as e:
@@ -324,7 +327,7 @@ def validation():
 
     env = SubprocVecEnv([make_env_fn() for _ in range(12)])
 
-    model = PPO.load(model_path_global)
+    model = PPO.load(model_path)
 
     results = run_episodes_hrl_vec(
         env,
@@ -402,25 +405,44 @@ def manual_control():
     env.close()
 
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the command line: the meta agent model and the mode (None: ask for it)."""
+    parser = argparse.ArgumentParser(description="Evaluate a trained HRL meta agent (PPO).")
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=DEFAULT_MODEL,
+        help=f"meta agent model, e.g. ../trained-agents/HRL_PPO_minimal_4371279/HRL_PPO_scratch.zip (default: {DEFAULT_MODEL})",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["1", "2", "3", "4", "5"],
+        help="1 trained agent, 2 manual control, 3 validation, 4 trained agent with sampled actions, "
+        "5 watch the trained agent in Meshcat (default: ask)",
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
+    args = parse_args()
     # Choose whether to run trained agent or manual control
-    mode = input(
+    mode = args.mode or input(
         "Enter mode (1 for trained agent, 2 manual control, 3 for validation mode, 4 for trained agent with sampled actions "
         "and 5 to watch the trained agent in Meshcat): "
     )
 
     if mode == "1":
-        test_agent()
+        test_agent(args.model)
     elif mode == "2":
         manual_control()
     elif mode == "3":
-        validation()
+        validation(args.model)
     elif mode == "4":
-        test_agent(deterministic=False)
+        test_agent(args.model, deterministic=False)
     elif mode == "5":
         actions = input("Enter d for deterministic or s for sampled actions: ")
         if actions in ("d", "s"):
-            test_agent(deterministic=actions == "d", episodes=WATCH_EPISODES, visualise=True)
+            test_agent(args.model, deterministic=actions == "d", episodes=WATCH_EPISODES, visualise=True)
         else:
             print("Invalid actions selected")
     else:
