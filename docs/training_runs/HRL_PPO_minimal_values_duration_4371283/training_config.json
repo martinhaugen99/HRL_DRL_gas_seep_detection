@@ -1,0 +1,221 @@
+{
+    "RUN_INFO": {
+        "timestamp": "2026-10-29 22:58:39",
+        "AGENT_TYPE": "META",
+        "FEATURE_EXTRACTOR": "CombinedExtractor",
+        "filtered_obs_keys": [
+            "border_coverage",
+            "gp_uncertainty",
+            "plume_coverage",
+            "plume_found",
+            "space_coverage",
+            "subagent_values",
+            "time_used"
+        ],
+        "TOTAL_TIMESTEPS": 10000000,
+        "NUM_ENVS": 12
+    },
+    "PPO_HYPERPARAMETERS": {
+        "learning_rate": 0.0003,
+        "n_steps": 512,
+        "batch_size": 1024,
+        "n_epochs": 4,
+        "gamma": 0.994011992,
+        "gae_lambda": 0.95,
+        "clip_range": "FloatSchedule(ConstantSchedule(val=0.2))",
+        "ent_coef": 0.01,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5
+    },
+    "ENVIRONMENT": {
+        "max_episode_length": 240,
+        "checkpoint_steps": 170833
+    },
+    "POLICY": {
+        "architecture": "MultiInputActorCriticPolicy(\n  (features_extractor): CombinedExtractor(\n    (extractors): ModuleDict(\n      (border_coverage): Flatten(start_dim=1, end_dim=-1)\n      (gp_uncertainty): Flatten(start_dim=1, end_dim=-1)\n      (plume_coverage): Flatten(start_dim=1, end_dim=-1)\n      (plume_found): Flatten(start_dim=1, end_dim=-1)\n      (space_coverage): Flatten(start_dim=1, end_dim=-1)\n      (subagent_values): Flatten(start_dim=1, end_dim=-1)\n      (time_used): Flatten(start_dim=1, end_dim=-1)\n    )\n  )\n  (pi_features_extractor): CombinedExtractor(\n    (extractors): ModuleDict(\n      (border_coverage): Flatten(start_dim=1, end_dim=-1)\n      (gp_uncertainty): Flatten(start_dim=1, end_dim=-1)\n      (plume_coverage): Flatten(start_dim=1, end_dim=-1)\n      (plume_found): Flatten(start_dim=1, end_dim=-1)\n      (space_coverage): Flatten(start_dim=1, end_dim=-1)\n      (subagent_values): Flatten(start_dim=1, end_dim=-1)\n      (time_used): Flatten(start_dim=1, end_dim=-1)\n    )\n  )\n  (vf_features_extractor): CombinedExtractor(\n    (extractors): ModuleDict(\n      (border_coverage): Flatten(start_dim=1, end_dim=-1)\n      (gp_uncertainty): Flatten(start_dim=1, end_dim=-1)\n      (plume_coverage): Flatten(start_dim=1, end_dim=-1)\n      (plume_found): Flatten(start_dim=1, end_dim=-1)\n      (space_coverage): Flatten(start_dim=1, end_dim=-1)\n      (subagent_values): Flatten(start_dim=1, end_dim=-1)\n      (time_used): Flatten(start_dim=1, end_dim=-1)\n    )\n  )\n  (mlp_extractor): MlpExtractor(\n    (policy_net): Sequential(\n      (0): Linear(in_features=9, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n    (value_net): Sequential(\n      (0): Linear(in_features=9, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n  )\n  (action_net): Linear(in_features=64, out_features=6, bias=True)\n  (value_net): Linear(in_features=64, out_features=1, bias=True)\n)"
+    },
+    "REWARD_FUNCTION_SOURCE": "",
+    "HRL_HYPERPARAMETERS": {
+        "kernel_config": {
+            "RBF": {
+                "type": "RBF",
+                "length_scale": 3.5
+            }
+        },
+        "MAX_OPT_LENGTH": 3,
+        "MULTIPLE_GAUSSIANS": [
+            1,
+            1
+        ]
+    },
+    "SUB_POLICIES": {
+        "option1": {
+            "name": "spatial exploration",
+            "directory": "../trained-agents/PPO_space_30M",
+            "model_path": "../trained-agents/PPO_space_30M/PPO_scratch.zip",
+            "obs_keys": [
+                "obs_state",
+                "visited_maps_downsampled",
+                "space_coverage"
+            ],
+            "config": {
+                "RUN_INFO": {
+                    "timestamp": "2026-09-26 04:58:37",
+                    "AGENT_TYPE": "SPACE",
+                    "FEATURE_EXTRACTOR": "AgentSpaceExplore",
+                    "filtered_obs_keys": [
+                        "obs_state",
+                        "visited_maps_downsampled",
+                        "space_coverage"
+                    ],
+                    "TOTAL_TIMESTEPS": 30000000,
+                    "NUM_ENVS": 12
+                },
+                "PPO_HYPERPARAMETERS": {
+                    "learning_rate": 0.0003,
+                    "n_steps": 512,
+                    "batch_size": 1024,
+                    "n_epochs": 4,
+                    "gamma": 0.9975,
+                    "gae_lambda": 0.95,
+                    "clip_range": "FloatSchedule(ConstantSchedule(val=0.2))",
+                    "ent_coef": 0.01,
+                    "vf_coef": 0.5,
+                    "max_grad_norm": 0.5
+                },
+                "ENVIRONMENT": {
+                    "max_episode_length": 460,
+                    "checkpoint_steps": 166666
+                },
+                "POLICY": {
+                    "architecture": "MultiInputActorCriticPolicy(\n  (features_extractor): AgentSpaceExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=73, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (pi_features_extractor): AgentSpaceExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=73, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (vf_features_extractor): AgentSpaceExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=73, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (mlp_extractor): MlpExtractor(\n    (policy_net): Sequential(\n      (0): Linear(in_features=128, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n    (value_net): Sequential(\n      (0): Linear(in_features=128, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n  )\n  (action_net): Linear(in_features=64, out_features=5, bias=True)\n  (value_net): Linear(in_features=64, out_features=1, bias=True)\n)"
+                },
+                "REWARD_FUNCTION_SOURCE": "    def get_reward(self, agent_turns,  percentage_visited,diff_new_cells,time_penalty = -0.7,_3D=False, agent_rises=False, VAR_downsampled=None):\n        \n\n        reward = 0\n        #reward += np.clip(diff_new_cells/4,0,1) # encourage more a lawnmower patern\n        reward += diff_new_cells/18\n        if agent_turns or agent_rises:\n            reward -= 0.3 * (1-percentage_visited)\n\n        if VAR_downsampled:\n            reward+= 0.1*(1-4*VAR_downsampled) # max variance is 0.25, with p=0.5\n        reward += time_penalty\n        return reward\n        #print(f\"DIFF={diff_new_cells}\")\n        # if not current_position_IN_visited_locations:\n        #     reward+=0.3*diff_new_cells/6+0.3*percentage_unvisited\n        # #print(f\"DIFF={diff_new_cells}\")\n            \n        # if not fill_position_IN_visited_locations:\n        #     reward += 0.3*diff_new_cells/6+0.3*(percentage_unvisited)\n        \n        # reward += time_penalty\n\n        # if distance_toclosest_unvisited<=1+1e-3:\n        #     reward += 0.2\n        # else:\n        #     reward += 0.2/distance_toclosest_unvisited\n        \n        # no velocity penalties as the HUGIN has to constantly move 2m/s forward\n\n    \n        #[reward is between -1 and 1]\n"
+            }
+        },
+        "option2": {
+            "name": "gas plume exploration",
+            "directory": "../trained-agents/PPO_compare_100M_4259607",
+            "model_path": "../trained-agents/PPO_compare_100M_4259607/PPO_scratch.zip",
+            "obs_keys": [
+                "obs_state",
+                "local_GT",
+                "plume_coverage",
+                "space_coverage",
+                "distance_from_max"
+            ],
+            "config": {
+                "RUN_INFO": {
+                    "timestamp": "2026-10-05 04:02:14",
+                    "AGENT_TYPE": "PLUME",
+                    "FEATURE_EXTRACTOR": "AgentPlumeExplore",
+                    "filtered_obs_keys": [
+                        "obs_state",
+                        "local_GT",
+                        "plume_coverage",
+                        "space_coverage",
+                        "distance_from_max"
+                    ],
+                    "TOTAL_TIMESTEPS": 100000000,
+                    "NUM_ENVS": 24
+                },
+                "PPO_HYPERPARAMETERS": {
+                    "learning_rate": 0.0003,
+                    "n_steps": 2048,
+                    "batch_size": 1024,
+                    "n_epochs": 4,
+                    "gamma": 0.995,
+                    "gae_lambda": 0.95,
+                    "clip_range": "FloatSchedule(ConstantSchedule(val=0.2))",
+                    "ent_coef": 0.01,
+                    "vf_coef": 0.5,
+                    "max_grad_norm": 0.5
+                },
+                "ENVIRONMENT": {
+                    "max_episode_length": 460,
+                    "checkpoint_steps": 416666
+                },
+                "POLICY": {
+                    "architecture": "MultiInputActorCriticPolicy(\n  (features_extractor): AgentPlumeExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (pi_features_extractor): AgentPlumeExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (vf_features_extractor): AgentPlumeExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (mlp_extractor): MlpExtractor(\n    (policy_net): Sequential(\n      (0): Linear(in_features=128, out_features=128, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=128, out_features=128, bias=True)\n      (3): Tanh()\n    )\n    (value_net): Sequential(\n      (0): Linear(in_features=128, out_features=128, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=128, out_features=128, bias=True)\n      (3): Tanh()\n    )\n  )\n  (action_net): Linear(in_features=128, out_features=5, bias=True)\n  (value_net): Linear(in_features=128, out_features=1, bias=True)\n)"
+                },
+                "REWARD_FUNCTION_SOURCE": "    def get_reward(self,  agent_turns, c_over_threshold_normed, diff_cell_above, time_penalty = -0.7,SUBAGENT_TRAIN_ON_GP = False,diff_new_cells=None,found_source=None,percentage_visited=None,_3D=False, agent_rises=False):\n        \n\n        reward = 0\n        if SUBAGENT_TRAIN_ON_GP and (not found_source):\n                # reward += np.clip(diff_new_cells/4,0,1)\n                reward += diff_new_cells/6*0.7\n        #reward += np.clip(diff_cell_above/4,0,1)\n        reward += diff_cell_above/6\n        # if fill_above_threshold:\n        #     #reward += 0.2\n        #     if not current_position_IN_visited_locations:\n        #         reward=1.4+0.3*(1-c_over_threshold_normed)\n        #        \n            \n        # if current_above_threshold:\n        #     #reward += 0.2\n        #     if not current_position_IN_visited_locations:\n        #         reward=1.4+0.3*(1-c_over_threshold_normed)\n        #         reward = diff_cell_above\n        \n        # if distance_to_closest_concentration_cell<=1+1e-3:\n        #     reward += 0.3\n        # else:\n        #     reward += 0.3/distance_to_closest_concentration_cell\n\n\n        if agent_turns:\n            if percentage_visited:\n                if c_over_threshold_normed==1.0:\n                    reward-=0.3 * (1-percentage_visited)\n                else:   \n                    reward -= 0.3 * (1-c_over_threshold_normed)*(1-percentage_visited) # turning is bad unless it helps the progress\n            else:\n                if c_over_threshold_normed==1.0:\n                    reward-=0.3\n                else:\n                    reward -= 0.3 * (1-c_over_threshold_normed)\n\n        reward += time_penalty # *(1-c_over_threshold_normed) # later in episode lower pressure\n\n        # no velocity penalties as the HUGIN has to constantly move 2m/s forward\n\n        #[reward is between -1 and 1]\n        return reward\n",
+                "HRL_HYPERPARAMETERS": {
+                    "kernel_config": {
+                        "RBF": {
+                            "type": "RBF",
+                            "length_scale": 3.5
+                        }
+                    }
+                }
+            }
+        },
+        "option3": {
+            "name": "gas border exploration",
+            "directory": "../trained-agents/PPO_border_4280885",
+            "model_path": "../trained-agents/PPO_border_4280885/PPO_scratch.zip",
+            "obs_keys": [
+                "obs_state",
+                "local_GT_around",
+                "border_coverage",
+                "space_coverage",
+                "distance_from_max"
+            ],
+            "config": {
+                "RUN_INFO": {
+                    "timestamp": "2026-10-10 23:17:21",
+                    "AGENT_TYPE": "BORDER",
+                    "FEATURE_EXTRACTOR": "AgentBoarderExplore",
+                    "filtered_obs_keys": [
+                        "obs_state",
+                        "local_GT_around",
+                        "border_coverage",
+                        "space_coverage",
+                        "distance_from_max"
+                    ],
+                    "TOTAL_TIMESTEPS": 60000000,
+                    "NUM_ENVS": 12
+                },
+                "PPO_HYPERPARAMETERS": {
+                    "learning_rate": 0.0003,
+                    "n_steps": 2048,
+                    "batch_size": 1024,
+                    "n_epochs": 4,
+                    "gamma": 0.9945,
+                    "gae_lambda": 0.95,
+                    "clip_range": "FloatSchedule(ConstantSchedule(val=0.2))",
+                    "ent_coef": 0.01,
+                    "vf_coef": 0.5,
+                    "max_grad_norm": 0.5
+                },
+                "ENVIRONMENT": {
+                    "max_episode_length": 460,
+                    "checkpoint_steps": 875001
+                },
+                "POLICY": {
+                    "architecture": "MultiInputActorCriticPolicy(\n  (features_extractor): AgentBoarderExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (pi_features_extractor): AgentBoarderExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (vf_features_extractor): AgentBoarderExplore(\n    (fc): Sequential(\n      (0): Linear(in_features=108, out_features=128, bias=True)\n      (1): ReLU()\n    )\n  )\n  (mlp_extractor): MlpExtractor(\n    (policy_net): Sequential(\n      (0): Linear(in_features=128, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n    (value_net): Sequential(\n      (0): Linear(in_features=128, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n  )\n  (action_net): Linear(in_features=64, out_features=5, bias=True)\n  (value_net): Linear(in_features=64, out_features=1, bias=True)\n)"
+                },
+                "REWARD_FUNCTION_SOURCE": "    def get_reward(self,  agent_turns, c_around_threshold_normed,diff_around_new, time_penalty = -0.7,SUBAGENT_TRAIN_ON_GP = False,diff_new_cells=None,found_source=None,percentage_visited=None,_3D=False, agent_rises=False):\n        \n\n        reward = 0\n        if SUBAGENT_TRAIN_ON_GP and (not found_source):\n                # reward += np.clip(diff_new_cells/4,0,1)\n                reward += diff_new_cells/6*0.7\n        #reward += np.clip(diff_around_new/4,0,1)\n        reward += diff_around_new/6\n        # if fill_around_threshold:\n        #     #print(\"FILL\")\n        #     #reward += 0.2\n        #     if not current_position_IN_visited_locations:\n        #         reward=0.9+0.3*(1-c_over_threshold_normed)\n        #         reward = diff_around_new\n        # if current_around_threshold:\n        #     #print(\"CURRENT\")\n        #     #reward += 0.2\n        #     if not current_position_IN_visited_locations:\n        #         reward=0.9+0.3*(1-c_over_threshold_normed)\n        #         reward = diff_around_new\n        # if distance_to_closest_unvisited_cell<=1+1e-3:\n        #     reward += 0.2\n        # else:\n        #     reward += 0.2/distance_to_closest_unvisited_cell\n        \"\"\"\n        if agent_turns:\n            if percentage_visited:\n                if c_around_threshold_normed==1.0:\n                    reward-=0.3 * (1-percentage_visited)\n                else:\n                    reward -= 0.3 * (1-c_around_threshold_normed)*(1-percentage_visited) # turning is bad unless it helps the progress\n            else:\n                if c_around_threshold_normed==1.0:\n                    reward-=0.3\n                else:\n                    reward -= 0.3 * (1-c_around_threshold_normed\n        \"\"\"\n        reward += time_penalty\n        # no velocity penalties as the HUGIN has to constantly move 2m/s forward\n\n        #[reward is between -1 and 1]\n        return reward\n",
+                "HRL_HYPERPARAMETERS": {
+                    "kernel_config": {
+                        "RBF": {
+                            "type": "RBF",
+                            "length_scale": 3.5
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "HRL_VARIANT": {
+        "preset": "minimal_values_duration",
+        "survey_steps": 480,
+        "option_lengths": [
+            2,
+            5
+        ],
+        "smdp_discount": true,
+        "mean_option_reward": false,
+        "decision_cost": 0.1,
+        "meta_state": "minimal_values"
+    }
+}
