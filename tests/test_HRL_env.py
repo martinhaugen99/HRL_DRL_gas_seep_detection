@@ -226,6 +226,27 @@ def test_invalid_settings_raise(settings: dict) -> None:
         make_env(**settings)
 
 
+def test_reset_resets_the_options_that_keep_a_plan() -> None:
+    # Arrange
+    class PlanningOption(StubOption):
+        def __init__(self) -> None:
+            super().__init__()
+            self.resets = 0
+
+        def reset(self) -> None:
+            self.resets += 1
+
+    planning = PlanningOption()
+    env = make_env(options=[planning, StubOption()])  # make_env resets once
+    resets_before = planning.resets
+
+    # Act
+    env.reset()
+
+    # Assert
+    assert planning.resets == resets_before + 1
+
+
 def test_full_meta_state_is_the_base_observation() -> None:
     # Arrange
     env = make_env()

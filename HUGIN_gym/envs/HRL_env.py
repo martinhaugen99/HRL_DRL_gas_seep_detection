@@ -60,6 +60,9 @@ class HierarchicalEnv(gym.Env):
         self.test_HRL = False
     def reset(self, **kwargs):
         obs, info = self.base_env.reset(**kwargs)
+        for option in self.options:
+            if hasattr(option, "reset"): # scripted options keep a plan per episode (SweepOption)
+                option.reset()
         self.current_obs = obs
         self.no_progress_steps=0
         self.once_per_episode=True # for pure GT run, GT HRL and GT subagents
