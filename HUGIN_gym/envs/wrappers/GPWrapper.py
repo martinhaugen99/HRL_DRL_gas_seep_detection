@@ -1,13 +1,36 @@
 import numpy as np
 import gymnasium as gym
+from scipy import ndimage
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, RBF, WhiteKernel, ConstantKernel as C
+from HUGIN_gym.envs.core.incremental_gp import IncrementalGP
 from HUGIN_gym.envs.core.rewards.agent2_plume import Reward as Reward2_plume
 #from HUGIN_gym.overlay.overlay_server import latest_values
 
 class GPWrapper(gym.Wrapper):
-    def __init__(self, env, kernels_config = None, gp_optimise = False, gp_visualise = False, max_points = 2000,HRL=False, SUB_AGENT_TRAIN_ON_GP =False):
+    GOAL_MODES = ("visit", "estimate")
+
+    def __init__(self, env, kernels_config = None, gp_optimise = False, gp_visualise = False, max_points = 2000,HRL=False, SUB_AGENT_TRAIN_ON_GP =False,
+                 fast_gp=True, goal_mode="visit", goal_mean_std=0.1, known_std=0.1, unknown_std=0.8, max_unknown_cells=10):
+        """
+        fast_gp: use IncrementalGP where it gives the same result as sklearn (RBF kernel with fixed settings)
+        goal_mode: the meta agent's goal. "visit": the AUV has visited the estimated plume and border cells.
+            "estimate": the GP knows those cells well (GP std <= known_std), visited or not.
+        goal_mean_std: with goal_mode "estimate", the mean GP std over the map that ends the episode.
+            With "visit" it comes from accuracy_goals, as 1 - accuracy_goals[0].
+        unknown_std, max_unknown_cells: with goal_mode "estimate", the episode only ends when no connected area with a
+            GP std above unknown_std has more than max_unknown_cells cells. The mean GP std alone can reach its limit
+            while part of the map is unsurveyed, and a plume can hide there. A complete sweep with tracks up to 6 cells
+            apart leaves no cell above 0.8.
+        """
         super().__init__(env)
+        if goal_mode not in self.GOAL_MODES:
+            raise ValueError(f"goal_mode must be one of {self.GOAL_MODES}, not {goal_mode!r}")
+        self.goal_mode = goal_mode
+        self.goal_mean_std = goal_mean_std
+        self.known_std = known_std
+        self.unknown_std = unknown_std
+        self.max_unknown_cells = max_unknown_cells
         self.HRL = HRL
         self.env.unwrapped.HRL = HRL # for the base_envs
         self.gp_optimise = gp_optimise
@@ -68,6 +91,14 @@ class GPWrapper(gym.Wrapper):
         
         self.gp_map_zeros = np.zeros(self.grid_shape, dtype=np.float32) # 2D thingy
         self.GP_pred=self.gp_map_zeros
+        self.GP_std = np.ones(self.grid_shape) # per cell; 1 is the prior, before any measurement
+
+        kernel_settings = self.kernels_config[self.GP_key]
+        if fast_gp and not gp_optimise and kernel_settings["type"] == "RBF":
+            self.incremental_gp = IncrementalGP(self.grid_positions, length_scale=kernel_settings.get("length_scale", 3.5))
+        else:
+            self.incremental_gp = None
+        self.incremental_gp_valid = True
 
         if self.gp_visualise: # CAREFUL! only for visualisation, NEVER for trainig!
             self.env.unwrapped.extract_GT_maps= self.env.unwrapped.GT_c_over_threshold_maps
@@ -192,7 +223,11 @@ class GPWrapper(gym.Wrapper):
         obs, info = self.env.reset(**kwargs)
 
         self.GP_pred=self.gp_map_zeros
-        self.distance_from_max = 1.0  
+        self.GP_std = np.ones(self.grid_shape)
+        if self.incremental_gp is not None:
+            self.incremental_gp.reset()
+        self.incremental_gp_valid = True
+        self.distance_from_max = 1.0
         self.SPACE_test_counter = 0
         self.X = []
         self.y = []
@@ -329,6 +364,7 @@ class GPWrapper(gym.Wrapper):
             if len(self.X) > self.max_points:
                 self.X = self.X[-self.max_points:]
                 self.y = self.y[-self.max_points:]
+                self.incremental_gp_valid = False # it cannot forget measurements, so sklearn takes over for this episode
 
             # -- 4. Fit GP --
             if True:#c>=self.env.unwrapped.c_around_width:
@@ -486,7 +522,10 @@ class GPWrapper(gym.Wrapper):
                 name: self.gp_map_zeros # assuming a reset before
                 for name in self.kernels
             }
-        
+
+        if self.incremental_gp is not None and self.incremental_gp_valid:
+            return self._predict_incremental()
+
         X = np.array(self.X)
         y = np.array(self.y)
 
@@ -497,10 +536,12 @@ class GPWrapper(gym.Wrapper):
             if self.env.unwrapped.train and self.env.unwrapped.agent_type in ("SPACE","META"): #,"PLUME","BORDER"
                 mean, std = kernel.predict(self.grid_positions, return_std=True)
                 self.env.unwrapped.MEAN_uncertainty = np.mean(std)
+                self.GP_std = std.reshape(self.grid_shape)
             elif self.env.unwrapped.train:
                 mean = kernel.predict(self.grid_positions, return_std=False)
             else:
                 mean, std = kernel.predict(self.grid_positions, return_std=True)
+                self.GP_std = std.reshape(self.grid_shape)
                 if self._3D:
                     outputs[name] = mean.reshape(self.env.unwrapped.map_size_x, self.env.unwrapped.map_size_y,self.env.unwrapped.map_size_z)
                     self.env.unwrapped.MEAN_uncertainty = np.mean(std)
@@ -519,6 +560,17 @@ class GPWrapper(gym.Wrapper):
 
         return outputs
 
+    def _predict_incremental(self):
+        """Same outputs and side effects as the sklearn path in predict, with the new measurements added one by one."""
+        for position, concentration in zip(self.X[self.incremental_gp.n:], self.y[self.incremental_gp.n:]):
+            self.incremental_gp.add(position, concentration)
+        base = self.env.unwrapped
+        self.GP_std = self.incremental_gp.std.reshape(self.grid_shape)
+        if not base.train:
+            base.extract_GP_ERROR_map = self.GP_std
+        if not base.train or base.agent_type in ("SPACE","META"):
+            base.MEAN_uncertainty = np.mean(self.GP_std)
+        return {self.GP_key: self.incremental_gp.mean.reshape(self.grid_shape)}
 
     def get_real_grid(self):
         return self.real_grid
@@ -550,15 +602,39 @@ class GPWrapper(gym.Wrapper):
 
         return ix, iy, iz
     
+    def goal_shares(self, obs):
+        """The shares of the estimated plume and border cells that count as done for the meta agent's goal."""
+        if self.goal_mode == "visit":
+            return obs["plume_coverage"][0], obs["border_coverage"][0]
+        base = self.env.unwrapped
+        known = self.GP_std <= self.known_std
+        if not self._3D:
+            known = known[..., None] # (X, Y, 1), as the belief maps
+        shares = []
+        for belief in (base.GT_c_over_threshold_maps, base.GT_c_around_threshold_maps):
+            cells = belief & ~self.corner_mask
+            shares.append(np.sum(cells & known) / np.sum(cells) if cells.any() else 1.0)
+        return shares[0], shares[1]
+
+    def largest_unknown_area(self):
+        """The number of cells in the largest connected area with a GP std above unknown_std."""
+        labels, n_areas = ndimage.label(self.GP_std > self.unknown_std)
+        return int(np.max(np.bincount(labels.ravel())[1:])) if n_areas else 0
+
+    def _map_is_surveyed(self):
+        return self.goal_mode == "visit" or self.largest_unknown_area() <= self.max_unknown_cells
+
     def _compute_meta_subgoal_reward(self, obs):
-        if self.once_per_episode == False and (obs["plume_coverage"][0]<self.accuracy_goals[1] or obs["border_coverage"][0]< self.accuracy_goals[2]):
+        plume_share, border_share = self.goal_shares(obs)
+        max_mean_std = (1-self.accuracy_goals[0]) if self.goal_mode == "visit" else self.goal_mean_std
+        if self.once_per_episode == False and (plume_share<self.accuracy_goals[1] or border_share< self.accuracy_goals[2]):
             self.once_per_episode = True # allowing to be rewarded for 2 or more plumes
-        if self.once_per_episode and obs["plume_coverage"][0]>=self.accuracy_goals[1] and obs["border_coverage"][0]>= self.accuracy_goals[2] and self.env.unwrapped.maxN_over_thresh>self.N_corners and self.env.unwrapped.maxN_around_thresh>self.N_corners:
+        if self.once_per_episode and plume_share>=self.accuracy_goals[1] and border_share>= self.accuracy_goals[2] and self.env.unwrapped.maxN_over_thresh>self.N_corners and self.env.unwrapped.maxN_around_thresh>self.N_corners:
             self.once_per_episode = False
-            reward = 40.0 # bonus for reaching the subgoal, to 
+            reward = 40.0 # bonus for reaching the subgoal, to
             terminated = False # we want to explore at least 80% of the rest
             #print("✅")
-        elif self.env.unwrapped.MEAN_uncertainty<=(1-self.accuracy_goals[0]) and obs["plume_coverage"][0]>=self.accuracy_goals[1] and obs["border_coverage"][0]>=self.accuracy_goals[2]:#obs["space_coverage"][0]>=self.accuracy_goals[0]:
+        elif self.env.unwrapped.MEAN_uncertainty<=max_mean_std and plume_share>=self.accuracy_goals[1] and border_share>=self.accuracy_goals[2] and self._map_is_surveyed():#obs["space_coverage"][0]>=self.accuracy_goals[0]:
             reward = 40.0
             terminated = True
             #print("✅✅ YOU SHOULD TERMINATE!!!!!")

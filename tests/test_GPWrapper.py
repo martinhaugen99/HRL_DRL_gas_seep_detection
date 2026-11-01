@@ -1,6 +1,7 @@
-"""Tests that the META observations of GPWrapper come from the GP belief, never from the true plume."""
+"""Tests that the META observations of GPWrapper come from the GP belief, never from the true plume, and for its fast GP and end goals."""
 
 import numpy as np
+import pytest
 
 from HUGIN_gym.envs.HUGIN_env import HUGIN
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
@@ -84,3 +85,205 @@ def test_boundary_step_repeats_the_latest_belief() -> None:
     assert reward == -4.0
     for key in PLUME_KEYS:
         np.testing.assert_array_equal(obs_boundary[key], obs_move[key], err_msg=key)
+
+
+FORWARD, LEFT, RIGHT = 0, 3, 4
+ACTIONS = [FORWARD, FORWARD, LEFT, FORWARD, UP, RIGHT, FORWARD, FORWARD, LEFT, LEFT, FORWARD, RIGHT]
+
+
+def run_survey(train: bool, **gp_settings: object) -> tuple[HUGIN, GPWrapper, list[dict]]:
+    """The same plume and the same moves for every call."""
+    np.random.seed(0)  # without train, the plume is drawn when the env is created
+    base = HUGIN()
+    base.train = train
+    base.GP_ON = True
+    base.agent_type = "META"  # type: ignore[attr-defined]  # set by the scripts, not in HUGIN.__init__
+    base.vary_plume_size = True
+    gp = GPWrapper(base, HRL=True, **gp_settings)
+    gp.reset()
+    return base, gp, [gp.step(action)[0] for action in ACTIONS]
+
+
+@pytest.mark.parametrize("train", [True, False])
+def test_fast_gp_gives_the_same_map_and_observations_as_sklearn(train: bool) -> None:
+    # Act
+    fast_base, fast_gp, fast_obs = run_survey(train, fast_gp=True)
+    sklearn_base, sklearn_gp, sklearn_obs = run_survey(train, fast_gp=False)
+
+    # Assert
+    assert fast_gp.incremental_gp.n == len(fast_gp.X)
+    assert sklearn_gp.incremental_gp is None
+    np.testing.assert_allclose(fast_gp.GP_pred, sklearn_gp.GP_pred, atol=1e-8)
+    np.testing.assert_allclose(fast_gp.GP_std, sklearn_gp.GP_std, atol=1e-7)
+    assert fast_base.MEAN_uncertainty == pytest.approx(sklearn_base.MEAN_uncertainty, abs=1e-7)
+    for fast_step, sklearn_step in zip(fast_obs, sklearn_obs, strict=True):
+        for key in PLUME_KEYS:
+            np.testing.assert_array_equal(fast_step[key], sklearn_step[key], err_msg=key)
+
+
+def test_sklearn_takes_over_when_measurements_are_dropped() -> None:
+    # Act: more measurements than max_points
+    _, fast_gp, _ = run_survey(True, fast_gp=True, max_points=3)
+    _, sklearn_gp, _ = run_survey(True, fast_gp=False, max_points=3)
+
+    # Assert
+    assert not fast_gp.incremental_gp_valid
+    np.testing.assert_allclose(fast_gp.GP_pred, sklearn_gp.GP_pred, atol=1e-8)
+
+
+def test_reset_starts_the_fast_gp_again() -> None:
+    # Arrange
+    _, gp, _ = run_survey(True)
+
+    # Act
+    gp.reset()
+
+    # Assert
+    assert gp.incremental_gp.n == 0
+    assert gp.GP_std.min() == 1.0
+
+
+def test_only_the_fixed_rbf_kernel_uses_the_fast_gp() -> None:
+    # Arrange
+    base, _ = make_meta_env()
+
+    # Act
+    matern = GPWrapper(base, kernels_config={"Matern": {"type": "Matern", "length_scale": 3.5, "nu": 1.5}})
+    optimised = GPWrapper(base, gp_optimise=True)
+    plain = GPWrapper(base)
+
+    # Assert
+    assert matern.incremental_gp is None
+    assert optimised.incremental_gp is None
+    assert plain.incremental_gp is not None
+
+
+def make_goal_env(**goal_settings: object) -> tuple[HUGIN, GPWrapper, dict]:
+    """A found plume of 4 cells and a border of 4 cells that the GP knows well, but that the AUV has not visited."""
+    base, _ = make_meta_env()
+    gp = GPWrapper(base, HRL=True, **goal_settings)
+    gp.reset()
+    over = np.zeros((41, 41, 1), dtype=bool)
+    over[10:12, 10:12] = True
+    around = np.zeros((41, 41, 1), dtype=bool)
+    around[12:14, 10:12] = True
+    base.GT_c_over_threshold_maps = over | gp.corner_mask
+    base.GT_c_around_threshold_maps = around | gp.corner_mask
+    base.maxN_over_thresh = float(np.sum(base.GT_c_over_threshold_maps))
+    base.maxN_around_thresh = float(np.sum(base.GT_c_around_threshold_maps))
+    gp.GP_std = np.full((41, 41), 0.5)
+    gp.GP_std[10:14, 10:12] = 0.05
+    base.MEAN_uncertainty = 0.2
+    not_visited = {"plume_coverage": np.array([0.1]), "border_coverage": np.array([0.1])}
+    return base, gp, not_visited
+
+
+def test_visit_goal_needs_the_cells_to_be_visited() -> None:
+    # Arrange
+    _, gp, not_visited = make_goal_env(goal_mode="visit")
+
+    # Act and Assert
+    assert gp.goal_shares(not_visited) == (0.1, 0.1)
+    assert gp._compute_meta_subgoal_reward(not_visited) == (0.0, False)
+
+
+def test_estimate_goal_only_needs_the_cells_to_be_known() -> None:
+    # Arrange
+    _, gp, not_visited = make_goal_env(goal_mode="estimate", goal_mean_std=0.26)
+
+    # Act and Assert: the known plume first gives the subgoal bonus, and the next check ends the episode
+    assert gp.goal_shares(not_visited) == (1.0, 1.0)
+    assert gp._compute_meta_subgoal_reward(not_visited) == (40.0, False)
+    assert gp._compute_meta_subgoal_reward(not_visited) == (40.0, True)
+
+
+def test_estimate_goal_waits_for_the_mean_std_of_the_map() -> None:
+    # Arrange
+    _, gp, not_visited = make_goal_env(goal_mode="estimate", goal_mean_std=0.1)
+
+    # Act
+    gp._compute_meta_subgoal_reward(not_visited)  # the subgoal bonus
+
+    # Assert: 0.2 is above 0.1
+    assert gp._compute_meta_subgoal_reward(not_visited) == (0.0, False)
+
+
+def test_estimate_goal_counts_only_well_known_cells() -> None:
+    # Arrange
+    _, gp, not_visited = make_goal_env(goal_mode="estimate")
+    gp.GP_std[10, 10] = 0.5  # 1 of the 4 plume cells is not known
+
+    # Act
+    plume_share, border_share = gp.goal_shares(not_visited)
+
+    # Assert
+    assert plume_share == pytest.approx(0.75)
+    assert border_share == 1.0
+
+
+def test_estimate_goal_with_no_gas_found_is_complete() -> None:
+    # Arrange
+    base, gp, not_visited = make_goal_env(goal_mode="estimate")
+    base.GT_c_over_threshold_maps = gp.corner_mask.copy()
+    base.GT_c_around_threshold_maps = gp.corner_mask.copy()
+
+    # Act and Assert
+    assert gp.goal_shares(not_visited) == (1.0, 1.0)
+
+
+def test_estimate_goal_waits_for_a_large_unknown_area() -> None:
+    # Arrange: the mean GP std is low enough, but part of the map has no measurements nearby
+    _, gp, not_visited = make_goal_env(goal_mode="estimate", goal_mean_std=0.26, max_unknown_cells=10)
+    gp.GP_std[30:35, 30:35] = 0.95  # 25 connected cells
+    gp._compute_meta_subgoal_reward(not_visited)  # the subgoal bonus
+
+    # Act and Assert
+    assert gp.largest_unknown_area() == 25
+    assert gp._compute_meta_subgoal_reward(not_visited) == (0.0, False)
+
+
+def test_estimate_goal_ends_when_the_unknown_area_is_small_enough() -> None:
+    # Arrange
+    _, gp, not_visited = make_goal_env(goal_mode="estimate", goal_mean_std=0.26, max_unknown_cells=10)
+    gp.GP_std[30:32, 30:32] = 0.95  # 4 connected cells
+    gp._compute_meta_subgoal_reward(not_visited)
+
+    # Act and Assert
+    assert gp.largest_unknown_area() == 4
+    assert gp._compute_meta_subgoal_reward(not_visited) == (40.0, True)
+
+
+def test_unknown_areas_are_measured_one_by_one_not_added_up() -> None:
+    # Arrange: two areas of 4 cells that do not touch
+    _, gp, _ = make_goal_env(goal_mode="estimate")
+    gp.GP_std[30:32, 30:32] = 0.95
+    gp.GP_std[35:37, 35:37] = 0.95
+
+    # Act and Assert
+    assert gp.largest_unknown_area() == 4
+
+
+def test_unknown_area_is_zero_when_the_whole_map_is_below_the_limit() -> None:
+    # Arrange
+    _, gp, _ = make_goal_env(goal_mode="estimate")
+
+    # Act and Assert: 0.5 and 0.05 are below the limit of 0.8
+    assert gp.largest_unknown_area() == 0
+
+
+def test_visit_goal_ignores_unknown_areas() -> None:
+    # Arrange: the plume is visited and the mean GP std is low, as today's goal needs
+    base, gp, _ = make_goal_env(goal_mode="visit")
+    visited = {"plume_coverage": np.array([1.0]), "border_coverage": np.array([1.0])}
+    base.MEAN_uncertainty = 0.05
+    gp.GP_std[30:35, 30:35] = 0.95
+    gp._compute_meta_subgoal_reward(visited)
+
+    # Act and Assert
+    assert gp._compute_meta_subgoal_reward(visited) == (40.0, True)
+
+
+def test_unknown_goal_mode_raises() -> None:
+    # Act and Assert
+    with pytest.raises(ValueError, match="goal_mode"):
+        GPWrapper(HUGIN(), goal_mode="guess")
