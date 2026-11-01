@@ -9,7 +9,7 @@ from stable_baselines3 import PPO
 import HUGIN_gym  # This import will automatically register the environment
 
 
-from HUGIN_gym.agents.options import Option
+from HUGIN_gym.agents.options import Option, SweepOption
 from HUGIN_gym.envs.HRL_env import HierarchicalEnv
 from HUGIN_gym.agents.term_fn.termination_fn_agent1 import termination_fn1
 from HUGIN_gym.agents.term_fn.termination_fn_agent2 import termination_fn2
@@ -26,6 +26,8 @@ from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
 from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
 from HUGIN_gym.utils.io import hrl_variant_from_config, load_training_config_from_model
 from HUGIN_gym.evaluation.rollout import run_episode_hrl, manual_rollout_hrl,run_episodes_hrl_vec
+from HUGIN_gym.evaluation.baselines import BASELINES, make_baseline
+from HUGIN_gym.evaluation.survey_metrics import map_metrics, summarise_by_plumes
 
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import SubprocVecEnv
@@ -46,10 +48,12 @@ from tqdm import tqdm
 # =========================================================
 
 def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MULTIPLE_GAUSSIANS=None, MAX_OPT_LENGTH =None,ACCURACY_GOALS=None,
-                  SURVEY_STEPS=None, VARIANT=None):
+                  SURVEY_STEPS=None, VARIANT=None, SPACING=None, GOAL="visit", GOAL_MEAN_STD=0.1, KNOWN_STD=0.1, UNKNOWN_STD=0.8, MAX_UNKNOWN_CELLS=10):
     """
     SURVEY_STEPS: survey budget in AUV steps, which ends the episode (None: no budget)
     VARIANT: the meta agent variant, i.e. the HierarchicalEnv settings of a preset in train_HRL(ppo).py (None: one option length, MAX_OPT_LENGTH)
+    SPACING: replace the space sub-agent with a scripted lawnmower option, tracks this many cells apart (None: keep it)
+    GOAL, GOAL_MEAN_STD, KNOWN_STD, UNKNOWN_STD, MAX_UNKNOWN_CELLS: the meta agent's end goal, see the same settings in lower case of GPWrapper
     """
 
     base_env = gym.make(
@@ -82,7 +86,11 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
             gp_visualise=VIS_GP,
             HRL=True,
             SUB_AGENT_TRAIN_ON_GP=False,
-            
+            goal_mode=GOAL,
+            goal_mean_std=GOAL_MEAN_STD,
+            known_std=KNOWN_STD,
+            unknown_std=UNKNOWN_STD,
+            max_unknown_cells=MAX_UNKNOWN_CELLS,
         )
         gp_env.accuracy_goals=ACCURACY_GOALS
         gp_vis = GPVisualiser(
@@ -104,7 +112,11 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
     option3 = Option(policy3, termination_fn2, "gas border exploration", obs_keys=["obs_state","local_GT_around", "border_coverage","space_coverage","distance_from_max"])# ,"visited_maps_downsampled", "GT_c_around_threshold_maps_downsampled"
 
     gp_env = gp_env if GP else base_env
-    
+    if SPACING is not None:
+        if not GP:
+            raise ValueError("SweepOption reads the GP std per cell, so it needs the GP")
+        option1 = SweepOption(base_env, gp_env, SPACING, name=f"lawnmower sweep, tracks {SPACING} cells apart")
+
     env = HierarchicalEnv(
         base_env=gp_env,
         options=[option1, option2, option3],
@@ -131,13 +143,19 @@ OPTION_COLORS = [0x00FF00, 0xFF3399, 0xFFD700] # label and trail color per optio
 STEP_DELAY = 0.1 # seconds between AUV steps in the Meshcat view (0 = full speed)
 WATCH_EPISODES = 5 # episodes in the Meshcat view (mode 5)
 
-def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 1000, visualise: bool = False):
+def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 1000, visualise: bool = False, baseline: str | None = None,
+               spacing: int | None = None, sources: list[int] | None = None, goal: str = "visit", goal_mean_std: float = 0.1, known_std: float = 0.1,
+               unknown_std: float = 0.8, max_unknown_cells: int = 10):
     """
-    Run the trained meta agent for a number of episodes and print the mean +- std of the results.
-    model_path: the meta agent model; training_config.json is read from the same folder
+    Run the trained meta agent or a baseline for a number of episodes and print the mean +- std of the results.
+    model_path: the meta agent model; training_config.json is read from the same folder (not used with a baseline)
     deterministic: the meta agent takes its most likely action (True) or samples it, as in training (False)
     visualise: show the episodes in the Meshcat browser view, slowed down by STEP_DELAY, with a label of the sub-agent
         in control and a pause after each episode
+    baseline: a meta agent without learning instead of the model, see baselines.py. It uses the untuned variant.
+    spacing: replace the space sub-agent with a scripted lawnmower option, tracks this many cells apart
+    sources: the smallest and largest number of gas sources per episode (None: as in the model's training)
+    goal, goal_mean_std, known_std, unknown_std, max_unknown_cells: the meta agent's end goal, see GPWrapper (goal is its goal_mode)
     """
 
     VISUALISE = visualise
@@ -147,29 +165,29 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
     SEED = 0 # the env draws the plumes and start positions from np.random at reset, so every evaluation gets the same episodes
 
     # Load config from the same folder
-    config = load_training_config_from_model(model_path)
+    config = {} if baseline else load_training_config_from_model(model_path)
     kernel_config = config.get("HRL_HYPERPARAMETERS", {}).get("kernel_config", None)
-    MULTIPLE_GAUSSIANS = [1,1]#config.get("HRL_HYPERPARAMETERS", {}).get("MULTIPLE_GAUSSIANS", None)
+    MULTIPLE_GAUSSIANS = sources or config.get("HRL_HYPERPARAMETERS", {}).get("MULTIPLE_GAUSSIANS") or [1,1]
     print(MULTIPLE_GAUSSIANS)
     MAX_OPT_LENGTH = 3#config.get("HRL_HYPERPARAMETERS", {}).get("MAX_OPT_LENGTH", None)
     ACCURACY_GOALS = [0.9,0.9,0.9]
     VARIANT, SURVEY_STEPS = hrl_variant_from_config(config, UNTUNED_VARIANT, UNTUNED_SURVEY_STEPS)
     env, gp_vis = make_test_env(GP=GP, VIS_GP=VIS_GP, VISUALISE=VISUALISE,kernel_config=kernel_config,MULTIPLE_GAUSSIANS = MULTIPLE_GAUSSIANS,MAX_OPT_LENGTH=MAX_OPT_LENGTH,ACCURACY_GOALS=ACCURACY_GOALS,
-                                SURVEY_STEPS=SURVEY_STEPS,VARIANT=VARIANT) # add here a kernel_config from the config file !
+                                SURVEY_STEPS=SURVEY_STEPS,VARIANT=VARIANT,SPACING=spacing,GOAL=goal,GOAL_MEAN_STD=goal_mean_std,KNOWN_STD=known_std,
+                                UNKNOWN_STD=unknown_std,MAX_UNKNOWN_CELLS=max_unknown_cells) # add here a kernel_config from the config file !
 
     # Load HIGH-LEVEL model (the one you trained in train.py)
     # CNN reconstruction for downsampling. NOTE: if you did not train an agent yet, you can simply use the CNN defined
-    model = PPO.load(model_path)
+    model = make_baseline(baseline, env, SEED) if baseline else PPO.load(model_path)
     try:
-        model = PPO.load(model_path)
         cnn=CNN(layers = 3) # the original design was a resulting 4x4 downsampled state space
     except Exception as e:
         print(f"Failed to load model ({e}), using default CNN")
 
-        
 
 
-    MAX_EPS_LEN = config["ENVIRONMENT"]["max_episode_length"] # e.g. 90
+
+    MAX_EPS_LEN = config["ENVIRONMENT"]["max_episode_length"] if config else SURVEY_STEPS // min(VARIANT["option_lengths"]) # e.g. 90
 
     env.visualise_env = VISUALISE # allowing the simulator to update within an option
     env.step_delay = STEP_DELAY
@@ -202,6 +220,7 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
     fn=[]
     RMSE_c=[]
     extracted_GP_imgs: list[np.ndarray] =[]
+    map_rows: list[dict[str, float]] = [] # one per episode, see survey_metrics.py
     set_random_seed(SEED)
     for ep in tqdm(range(episodes), desc="episodes", disable=VISUALISE):
 
@@ -240,9 +259,24 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
         rmse = np.sqrt(mse)
 
         RMSE_c.append(rmse)
-    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, model {model_path}")
+        map_rows.append({
+            **map_metrics(
+                env.base_env.GP_pred,
+                env.base_env.original_GT_c_over[:,:,0],
+                env.base_env.original_GT_c_around[:,:,0],
+                env.base_env.unwrapped.state["visited_map"][:,:,0,0],
+                env.base_env.c_thresh,
+                env.base_env.c_std,
+            ),
+            "ended_early": float(result["terminated"]),
+            "steps": result["base_env_steps"],
+        })
+    agent = f"baseline {baseline}" if baseline else f"model {model_path}"
+    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, {agent}, spacing {spacing}, sources {MULTIPLE_GAUSSIANS}, goal {goal}"
+          + (f" (mean GP std <= {goal_mean_std}, known cells GP std <= {known_std}, unknown areas with GP std > {unknown_std} of at most {max_unknown_cells} cells)" if goal == "estimate" else ""))
     print(f"REWARD = {np.mean(np.array(average_reward)):.2f} +- {np.std(np.array(average_reward)):.2f}")
-    action_names = HierarchicalEnv.action_names(OPTION_NAMES, VARIANT["option_lengths"])
+    option_names = ["sweep" if spacing else OPTION_NAMES[0], *OPTION_NAMES[1:]]
+    action_names = HierarchicalEnv.action_names(option_names, VARIANT["option_lengths"])
     choice_counts = np.bincount(meta_actions, minlength=len(action_names))
     print("CHOICES = " + ", ".join(f"{name} {count / choice_counts.sum():.2f}" for name, count in zip(action_names, choice_counts)))
     print(
@@ -280,9 +314,23 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
         )
     except:
         pass
+    print_map_results(map_rows)
     env.close()
 
-    
+
+def print_map_results(rows: list[dict[str, float]]) -> None:
+    """The map at the end of the episodes, overall and per number of true plumes (sources that overlap count as one)."""
+    for name, key in (("PLUME OVERLAP", "plume_overlap"), ("BORDER OVERLAP", "border_overlap"),
+                      ("TRUE PLUME VISITED", "true_plume_visited"), ("TRUE BORDER VISITED", "true_border_visited")):
+        values = [row[key] for row in rows]
+        print(f"{name} = {np.mean(values):.4f} +- {np.std(values):.4f}")
+    n_plumes = sum(row["plumes"] for row in rows)
+    print(f"PLUMES FOUND = {sum(row['plumes_found'] for row in rows) / n_plumes:.4f} of {n_plumes}")
+    print(f"PLUMES VISITED = {sum(row['plumes_visited'] for row in rows) / n_plumes:.4f} of {n_plumes}")
+    print("plumes | episodes | ended early | AUV steps | plume overlap | border overlap | plumes found | plumes visited")
+    for row in summarise_by_plumes(rows):
+        print(f"{row['plumes']:6.0f} | {row['episodes']:8.0f} | {row['ended_early']:11.3f} | {row['steps']:9.1f} | {row['plume_overlap']:13.4f} | {row['border_overlap']:14.4f} | "
+              f"{row['plumes_found'] / max(row['plumes'], 1):12.3f} | {row['plumes_visited'] / max(row['plumes'], 1):14.3f}")
 
 
 def validation(model_path: Path):
@@ -418,31 +466,64 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--mode",
         choices=["1", "2", "3", "4", "5"],
         help="1 trained agent, 2 manual control, 3 validation, 4 trained agent with sampled actions, "
-        "5 watch the trained agent in Meshcat (default: ask)",
+        "5 watch the trained agent in Meshcat (default: ask; with --baseline: 1)",
     )
+    parser.add_argument(
+        "--baseline",
+        choices=BASELINES,
+        help="a meta agent without learning instead of --model: lawnmower (always the sweep, tracks --spacing apart, default 2), "
+        "space (always the space sub-agent), rule (a simple rule from the GP map) or random (1/3 per sub-agent)",
+    )
+    parser.add_argument("--spacing", type=int, help="replace the space sub-agent with a scripted lawnmower, tracks this many cells apart")
+    parser.add_argument(
+        "--sources",
+        nargs=2,
+        type=int,
+        metavar=("MIN", "MAX"),
+        help="smallest and largest number of gas sources per episode. The agent is not told the number (default: as in the model's training)",
+    )
+    parser.add_argument(
+        "--goal",
+        choices=GPWrapper.GOAL_MODES,
+        default="visit",
+        help="the end goal: visit the estimated plume and border cells, or estimate them well (default: visit)",
+    )
+    parser.add_argument("--goal-mean-std", type=float, default=0.1, help="with --goal estimate: mean GP std over the map that ends the episode (default: 0.1)")
+    parser.add_argument("--known-std", type=float, default=0.1, help="with --goal estimate: a cell counts as known at this GP std or lower (default: 0.1)")
+    parser.add_argument("--unknown-std", type=float, default=0.8, help="with --goal estimate: a cell counts as unknown above this GP std (default: 0.8)")
+    parser.add_argument(
+        "--max-unknown-cells",
+        type=int,
+        default=10,
+        help="with --goal estimate: the largest connected unknown area, in cells, that still lets the episode end (default: 10)",
+    )
+    parser.add_argument("--episodes", type=int, default=1000, help="number of episodes for modes 1 and 4 (default: 1000)")
     return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
     args = parse_args()
     # Choose whether to run trained agent or manual control
-    mode = args.mode or input(
+    mode = args.mode or ("1" if args.baseline else input(
         "Enter mode (1 for trained agent, 2 manual control, 3 for validation mode, 4 for trained agent with sampled actions "
         "and 5 to watch the trained agent in Meshcat): "
-    )
+    ))
+    spacing = args.spacing if args.spacing is not None or args.baseline != "lawnmower" else 2
+    survey = {"baseline": args.baseline, "spacing": spacing, "sources": args.sources, "goal": args.goal,
+              "goal_mean_std": args.goal_mean_std, "known_std": args.known_std, "unknown_std": args.unknown_std, "max_unknown_cells": args.max_unknown_cells}
 
     if mode == "1":
-        test_agent(args.model)
+        test_agent(args.model, episodes=args.episodes, **survey)
     elif mode == "2":
         manual_control()
     elif mode == "3":
         validation(args.model)
     elif mode == "4":
-        test_agent(args.model, deterministic=False)
+        test_agent(args.model, deterministic=False, episodes=args.episodes, **survey)
     elif mode == "5":
         actions = input("Enter d for deterministic or s for sampled actions: ")
         if actions in ("d", "s"):
-            test_agent(args.model, deterministic=actions == "d", episodes=WATCH_EPISODES, visualise=True)
+            test_agent(args.model, deterministic=actions == "d", episodes=WATCH_EPISODES, visualise=True, **survey)
         else:
             print("Invalid actions selected")
     else:
