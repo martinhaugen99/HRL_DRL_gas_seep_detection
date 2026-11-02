@@ -1,4 +1,4 @@
-"""Tests for Option.value (the sub-agent's critic estimate, from its own observation keys only) and SweepOption."""
+"""Tests for Option.value (the sub-agent's critic estimate, from its own observation keys only) and the scripted options."""
 
 from types import SimpleNamespace
 
@@ -12,12 +12,14 @@ from HUGIN_gym.agents.options import (
     LEFT,
     QUARTER_TURN,
     RIGHT,
+    GasFillOption,
     Option,
     SweepOption,
 )
 from HUGIN_gym.envs.HRL_env import HierarchicalEnv
 from HUGIN_gym.envs.HUGIN_env import HUGIN
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
+from HUGIN_gym.evaluation.baselines import make_baseline
 
 BOUNDARY_PENALTY = -4.0
 # the survey starts of HUGIN._spawn_at_survey_start: a corner, heading along one of its two edges into the map
@@ -222,3 +224,132 @@ def test_always_choosing_the_sweep_is_a_lawnmower_that_reaches_the_visit_goal() 
     # Assert
     assert terminated
     assert env.primitive_steps < 430
+
+
+def make_gas_fill(goal_mode: str = "visit") -> tuple[HUGIN, SimpleNamespace, GasFillOption]:
+    """A gas option on the real base env, with an empty belief and a GP that knows every cell moderately well."""
+    base = HUGIN()
+    base.HRL = True  # the base env gives no reward except the boundary penalty
+    base.reset()
+    base.state["x"], base.state["y"], base.state["theta"] = -10, -10, 0.0
+    corners = np.zeros((41, 41, 1), dtype=bool)
+    corners[[0, 0, 40, 40], [0, 40, 0, 40]] = True
+    base.GT_c_over_threshold_maps = corners.copy()
+    base.GT_c_around_threshold_maps = corners.copy()
+    gp = SimpleNamespace(GP_std=np.full((41, 41), 0.5), goal_mode=goal_mode, known_std=0.1, corner_mask=corners)
+    return base, gp, GasFillOption(base, gp)
+
+
+def steps_until_near(base: HUGIN, option: GasFillOption, cell: tuple[int, int], max_steps: int = 40) -> int | None:
+    """Follow the option until the AUV is within 1 cell of cell (x, y). None if it does not get there."""
+    for step in range(max_steps):
+        _, reward, *_ = base.step(option.act({}))
+        assert reward != BOUNDARY_PENALTY
+        if abs(base.state["x"] - cell[0]) <= 1 and abs(base.state["y"] - cell[1]) <= 1:
+            return step + 1
+    return None
+
+
+def test_gas_fill_goes_to_the_nearest_unfinished_cell() -> None:
+    # Arrange: a border cell near the AUV and a plume cell far away
+    base, _, option = make_gas_fill()
+    base.GT_c_around_threshold_maps[0 + 20, -10 + 20] = True
+    base.GT_c_over_threshold_maps[15 + 20, 15 + 20] = True
+
+    # Act
+    steps = steps_until_near(base, option, (0, -10))
+
+    # Assert: 10 cells away, and the forward action moves 2
+    assert steps == 5
+
+
+def test_gas_fill_with_the_visit_goal_skips_visited_cells() -> None:
+    # Arrange: the nearest gas cell is visited
+    base, _, option = make_gas_fill(goal_mode="visit")
+    base.GT_c_over_threshold_maps[-8 + 20, -10 + 20] = True
+    base.state["visited_map"][-8 + 20, -10 + 20, 0, 0] = True
+    base.GT_c_over_threshold_maps[10 + 20, -10 + 20] = True
+
+    # Act
+    steps = steps_until_near(base, option, (10, -10))
+
+    # Assert
+    assert steps == 10
+
+
+def test_gas_fill_with_the_estimate_goal_skips_known_cells_even_if_not_visited() -> None:
+    # Arrange: the nearest gas cell is well known, but the AUV has not been there
+    base, gp, option = make_gas_fill(goal_mode="estimate")
+    base.GT_c_over_threshold_maps[-8 + 20, -10 + 20] = True
+    gp.GP_std[-8 + 20, -10 + 20] = 0.05
+    base.GT_c_over_threshold_maps[10 + 20, -10 + 20] = True
+
+    # Act
+    steps = steps_until_near(base, option, (10, -10))
+
+    # Assert
+    assert steps == 10
+
+
+def test_gas_fill_with_the_estimate_goal_returns_to_visited_cells_that_are_not_known() -> None:
+    # Arrange
+    base, _, option = make_gas_fill(goal_mode="estimate")
+    base.GT_c_over_threshold_maps[0 + 20, -10 + 20] = True
+    base.state["visited_map"][0 + 20, -10 + 20, 0, 0] = True
+
+    # Act and Assert
+    assert steps_until_near(base, option, (0, -10)) == 5
+
+
+def test_gas_fill_with_only_the_corner_cells_goes_to_the_least_known_cells() -> None:
+    # Arrange: no gas found, and the corners do not count as gas
+    base, gp, option = make_gas_fill()
+    gp.GP_std[0 + 18:0 + 23, 0 + 18:0 + 23] = 1.0  # around the middle of the map, more than 1 % of it
+
+    # Act
+    steps = steps_until_near(base, option, (0, 0))
+
+    # Assert
+    assert steps is not None
+
+
+@pytest.mark.parametrize(
+    ("goal_mode", "spacing", "goal_mean_std"),
+    [("visit", 4, 0.1), ("estimate", 6, 0.26)],
+)
+def test_rule_with_the_scripted_options_reaches_the_goal_with_several_plumes(
+    goal_mode: str, spacing: int, goal_mean_std: float
+) -> None:
+    # Arrange: the real env of the HRL evaluation
+    base = HUGIN()
+    base.train = True
+    base.use_c_map = True
+    base.GP_ON = True
+    base.HRL = True
+    base.agent_type = "META"  # type: ignore[attr-defined]  # set by the scripts, not in HUGIN.__init__
+    base.spawn_at_survey_start = True
+    base.vary_plume_size = True
+    base.multiple_gaussians = [2, 2]
+    gp_env = GPWrapper(base, HRL=True, goal_mode=goal_mode, goal_mean_std=goal_mean_std)
+    env = HierarchicalEnv(
+        gp_env,
+        [SweepOption(base, gp_env, spacing), GasFillOption(base, gp_env), GasFillOption(base, gp_env)],
+        gamma=0.998,
+        MAX_OPT_LENGTH=3,
+        ACCURACY_GOALS=[0.9, 0.9, 0.9],
+        GP=True,
+        max_primitive_steps=480,
+    )
+    model = make_baseline("rule", env, seed=0)
+    np.random.seed(1)
+    obs, _ = env.reset()
+
+    # Act
+    terminated = truncated = False
+    while not (terminated or truncated):
+        action, _ = model.predict(obs)
+        obs, _, terminated, truncated, _ = env.step(action)
+
+    # Assert
+    assert terminated
+    assert env.primitive_steps < 480

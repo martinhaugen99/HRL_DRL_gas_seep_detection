@@ -9,7 +9,7 @@ from stable_baselines3 import PPO
 import HUGIN_gym  # This import will automatically register the environment
 
 
-from HUGIN_gym.agents.options import Option, SweepOption
+from HUGIN_gym.agents.options import GasFillOption, Option, SweepOption
 from HUGIN_gym.envs.HRL_env import HierarchicalEnv
 from HUGIN_gym.agents.term_fn.termination_fn_agent1 import termination_fn1
 from HUGIN_gym.agents.term_fn.termination_fn_agent2 import termination_fn2
@@ -48,11 +48,12 @@ from tqdm import tqdm
 # =========================================================
 
 def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MULTIPLE_GAUSSIANS=None, MAX_OPT_LENGTH =None,ACCURACY_GOALS=None,
-                  SURVEY_STEPS=None, VARIANT=None, SPACING=None, GOAL="visit", GOAL_MEAN_STD=0.1, KNOWN_STD=0.1, UNKNOWN_STD=0.8, MAX_UNKNOWN_CELLS=10):
+                  SURVEY_STEPS=None, VARIANT=None, SPACING=None, GOAL="visit", GOAL_MEAN_STD=0.1, KNOWN_STD=0.1, UNKNOWN_STD=0.8, MAX_UNKNOWN_CELLS=10, SCRIPTED_GAS=False):
     """
     SURVEY_STEPS: survey budget in AUV steps, which ends the episode (None: no budget)
     VARIANT: the meta agent variant, i.e. the HierarchicalEnv settings of a preset in train_HRL(ppo).py (None: one option length, MAX_OPT_LENGTH)
     SPACING: replace the space sub-agent with a scripted lawnmower option, tracks this many cells apart (None: keep it)
+    SCRIPTED_GAS: replace the plume and border sub-agents with GasFillOption, as a benchmark for them
     GOAL, GOAL_MEAN_STD, KNOWN_STD, UNKNOWN_STD, MAX_UNKNOWN_CELLS: the meta agent's end goal, see the same settings in lower case of GPWrapper
     """
 
@@ -116,6 +117,11 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
         if not GP:
             raise ValueError("SweepOption reads the GP std per cell, so it needs the GP")
         option1 = SweepOption(base_env, gp_env, SPACING, name=f"lawnmower sweep, tracks {SPACING} cells apart")
+    if SCRIPTED_GAS:
+        if not GP:
+            raise ValueError("GasFillOption reads the GP map, so it needs the GP")
+        option2 = GasFillOption(base_env, gp_env)
+        option3 = GasFillOption(base_env, gp_env)
 
     env = HierarchicalEnv(
         base_env=gp_env,
@@ -145,7 +151,7 @@ WATCH_EPISODES = 5 # episodes in the Meshcat view (mode 5)
 
 def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 1000, visualise: bool = False, baseline: str | None = None,
                spacing: int | None = None, sources: list[int] | None = None, goal: str = "visit", goal_mean_std: float = 0.1, known_std: float = 0.1,
-               unknown_std: float = 0.8, max_unknown_cells: int = 10):
+               unknown_std: float = 0.8, max_unknown_cells: int = 10, scripted_gas: bool = False):
     """
     Run the trained meta agent or a baseline for a number of episodes and print the mean +- std of the results.
     model_path: the meta agent model; training_config.json is read from the same folder (not used with a baseline)
@@ -154,6 +160,7 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
         in control and a pause after each episode
     baseline: a meta agent without learning instead of the model, see baselines.py. It uses the untuned variant.
     spacing: replace the space sub-agent with a scripted lawnmower option, tracks this many cells apart
+    scripted_gas: replace the plume and border sub-agents with GasFillOption, as a benchmark for them
     sources: the smallest and largest number of gas sources per episode (None: as in the model's training)
     goal, goal_mean_std, known_std, unknown_std, max_unknown_cells: the meta agent's end goal, see GPWrapper (goal is its goal_mode)
     """
@@ -174,7 +181,7 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
     VARIANT, SURVEY_STEPS = hrl_variant_from_config(config, UNTUNED_VARIANT, UNTUNED_SURVEY_STEPS)
     env, gp_vis = make_test_env(GP=GP, VIS_GP=VIS_GP, VISUALISE=VISUALISE,kernel_config=kernel_config,MULTIPLE_GAUSSIANS = MULTIPLE_GAUSSIANS,MAX_OPT_LENGTH=MAX_OPT_LENGTH,ACCURACY_GOALS=ACCURACY_GOALS,
                                 SURVEY_STEPS=SURVEY_STEPS,VARIANT=VARIANT,SPACING=spacing,GOAL=goal,GOAL_MEAN_STD=goal_mean_std,KNOWN_STD=known_std,
-                                UNKNOWN_STD=unknown_std,MAX_UNKNOWN_CELLS=max_unknown_cells) # add here a kernel_config from the config file !
+                                UNKNOWN_STD=unknown_std,MAX_UNKNOWN_CELLS=max_unknown_cells,SCRIPTED_GAS=scripted_gas) # add here a kernel_config from the config file !
 
     # Load HIGH-LEVEL model (the one you trained in train.py)
     # CNN reconstruction for downsampling. NOTE: if you did not train an agent yet, you can simply use the CNN defined
@@ -272,7 +279,7 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
             "steps": result["base_env_steps"],
         })
     agent = f"baseline {baseline}" if baseline else f"model {model_path}"
-    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, {agent}, spacing {spacing}, sources {MULTIPLE_GAUSSIANS}, goal {goal}"
+    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, {agent}, spacing {spacing}, scripted gas {scripted_gas}, sources {MULTIPLE_GAUSSIANS}, goal {goal}"
           + (f" (mean GP std <= {goal_mean_std}, known cells GP std <= {known_std}, unknown areas with GP std > {unknown_std} of at most {max_unknown_cells} cells)" if goal == "estimate" else ""))
     print(f"REWARD = {np.mean(np.array(average_reward)):.2f} +- {np.std(np.array(average_reward)):.2f}")
     option_names = ["sweep" if spacing else OPTION_NAMES[0], *OPTION_NAMES[1:]]
@@ -475,6 +482,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "space (always the space sub-agent), rule (a simple rule from the GP map) or random (1/3 per sub-agent)",
     )
     parser.add_argument("--spacing", type=int, help="replace the space sub-agent with a scripted lawnmower, tracks this many cells apart")
+    parser.add_argument("--scripted-gas", action="store_true", help="replace the plume and border sub-agents with a scripted gas option, as a benchmark for them")
     parser.add_argument(
         "--sources",
         nargs=2,
@@ -510,7 +518,7 @@ if __name__ == "__main__":
     ))
     spacing = args.spacing if args.spacing is not None or args.baseline != "lawnmower" else 2
     survey = {"baseline": args.baseline, "spacing": spacing, "sources": args.sources, "goal": args.goal,
-              "goal_mean_std": args.goal_mean_std, "known_std": args.known_std, "unknown_std": args.unknown_std, "max_unknown_cells": args.max_unknown_cells}
+              "goal_mean_std": args.goal_mean_std, "known_std": args.known_std, "unknown_std": args.unknown_std, "max_unknown_cells": args.max_unknown_cells, "scripted_gas": args.scripted_gas}
 
     if mode == "1":
         test_agent(args.model, episodes=args.episodes, **survey)

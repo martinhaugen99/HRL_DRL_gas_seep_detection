@@ -83,6 +83,12 @@ def test_parse_args_reads_the_unknown_area_check(script: ModuleType) -> None:
     assert (args.unknown_std, args.max_unknown_cells) == (0.7, 25)
 
 
+def test_parse_args_reads_the_scripted_gas_option(script: ModuleType) -> None:
+    # Act and Assert
+    assert script.parse_args([]).scripted_gas is False
+    assert script.parse_args(["--scripted-gas"]).scripted_gas is True
+
+
 @pytest.mark.parametrize("argv", [["--baseline", "oracle"], ["--goal", "guess"], ["--sources", "1"]])
 def test_parse_args_rejects_unknown_survey_settings(script: ModuleType, argv: list[str]) -> None:
     # Act and assert
