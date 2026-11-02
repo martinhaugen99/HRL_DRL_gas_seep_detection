@@ -84,6 +84,8 @@ PRESETS = {
     "sweep6_est_no_time": {**THREE_STEPS, "meta_state": "gas_no_time", "reward_mode": "cells_fixed", "survey": SWEEP6_ESTIMATE},
     "space_est": {**THREE_STEPS, "meta_state": "gas", "reward_mode": "cells_fixed", "survey": {**SWEEP6_ESTIMATE, "spacing": None}},
     "sweep6_est_one": {**THREE_STEPS, "meta_state": "gas", "reward_mode": "cells_fixed", "survey": {**SWEEP6_ESTIMATE, "sources": [1, 1]}},
+    # the control: the survey of sweep6_est with the meta state, reward and bonus of run 5, to show what those three fixes are worth together
+    "sweep6_est_control": {**THREE_STEPS, "meta_state": "minimal_values", "reward_mode": "cells", "survey": {**SWEEP6_ESTIMATE, "bonus_mode": "coverage"}},
 }
 
 

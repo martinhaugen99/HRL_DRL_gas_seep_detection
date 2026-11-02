@@ -10,7 +10,7 @@ set -o errexit
 set -o nounset
 
 DECISIONS=${1:-5000000}
-TAGS="sweep6_est sweep4_visit sweep6_est_map sweep6_est_no_time space_est sweep6_est_one"
+TAGS="sweep6_est sweep4_visit sweep6_est_map sweep6_est_no_time space_est sweep6_est_one sweep6_est_control"
 SEEDS="1 2 3"
 
 for tag in $TAGS; do

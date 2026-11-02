@@ -57,10 +57,29 @@ def test_the_agent_is_trained_on_a_random_number_of_plumes_except_the_comparison
     run_6 = [name for name, preset in script.PRESETS.items() if "survey" in preset]
 
     # Act and Assert: a fixed number would teach it how many to expect
-    assert len(run_6) == 6
+    assert len(run_6) == 7
     for name in run_6:
         expected = [1, 1] if name == "sweep6_est_one" else [1, 3]
         assert script.PRESETS[name]["survey"]["sources"] == expected
+
+
+def test_the_control_differs_from_the_main_variant_only_in_meta_state_reward_and_bonus(script: ModuleType) -> None:
+    # Arrange
+    main, control = script.PRESETS["sweep6_est"], script.PRESETS["sweep6_est_control"]
+
+    # Act
+    different_settings = {key for key in main if main[key] != control[key]}
+    different_survey = {key for key in main["survey"] if main["survey"][key] != control["survey"][key]}
+
+    # Assert: a difference in results then comes from these three fixes, with the same sweep, handover, goal and plumes
+    assert set(main) == set(control) and set(main["survey"]) == set(control["survey"])
+    assert different_settings == {"meta_state", "reward_mode", "survey"}
+    assert different_survey == {"bonus_mode"}
+    assert (control["meta_state"], control["reward_mode"], control["survey"]["bonus_mode"]) == (
+        "minimal_values",
+        "cells",
+        "coverage",
+    )
 
 
 def test_the_matrix_script_submits_only_known_presets(script: ModuleType) -> None:
