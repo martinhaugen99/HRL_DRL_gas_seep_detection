@@ -15,6 +15,13 @@ def share(part: np.ndarray, whole: np.ndarray) -> float:
     return float(np.sum(part & whole) / np.sum(whole)) if whole.any() else 1.0
 
 
+def gp_maps(gp_mean: np.ndarray, c_threshold: float, c_width: float) -> tuple[np.ndarray, np.ndarray]:
+    """The plume and border cells of the GP's estimate, from its mean concentration."""
+    plume = gp_mean > c_threshold
+    border = (gp_mean > c_threshold - c_width) & (gp_mean <= c_threshold + c_width)
+    return plume, border
+
+
 def map_metrics(
     gp_mean: np.ndarray,
     true_over: np.ndarray,
@@ -28,8 +35,7 @@ def map_metrics(
 
     A true plume is a connected region of cells above the threshold, so sources that overlap count as one plume.
     """
-    gp_over = gp_mean > c_threshold
-    gp_around = (gp_mean > c_threshold - c_width) & (gp_mean <= c_threshold + c_width)
+    gp_over, gp_around = gp_maps(gp_mean, c_threshold, c_width)
     labels, n_plumes = ndimage.label(true_over)
     plumes = [labels == i + 1 for i in range(n_plumes)]
     return {

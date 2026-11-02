@@ -6,6 +6,12 @@ from types import ModuleType
 
 import pytest
 
+from HUGIN_gym.agents.options import GasFillOption, SweepOption
+from HUGIN_gym.envs.HRL_env import HierarchicalEnv
+from HUGIN_gym.envs.HUGIN_env import HUGIN
+from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
+from HUGIN_gym.evaluation.baselines import make_baseline
+
 SCRIPT = Path(__file__).parents[1] / "HUGIN_gym" / "evaluation" / "test_HRL(ppo).py"
 MODEL = Path("../trained-agents/HRL_PPO_minimal_4371279/HRL_PPO_scratch.zip")
 
@@ -81,6 +87,34 @@ def test_parse_args_reads_the_unknown_area_check(script: ModuleType) -> None:
     # Assert
     assert (defaults.unknown_std, defaults.max_unknown_cells) == (0.8, 10)
     assert (args.unknown_std, args.max_unknown_cells) == (0.7, 25)
+
+
+def test_test_agent_runs_a_whole_evaluation_without_model_files(
+    script: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Arrange: the real env and the rule baseline, with scripted options instead of the trained models
+    base = HUGIN()
+    base.train = True
+    base.use_c_map = True
+    base.GP_ON = True
+    base.HRL = True
+    base.agent_type = "META"  # type: ignore[attr-defined]  # set by the scripts, not in HUGIN.__init__
+    base.spawn_at_survey_start = True
+    base.vary_plume_size = True
+    gp_env = GPWrapper(base, HRL=True)
+    options = [SweepOption(base, gp_env, spacing=4), GasFillOption(base, gp_env), GasFillOption(base, gp_env)]
+    env = HierarchicalEnv(gp_env, options, gamma=0.998, MAX_OPT_LENGTH=3, ACCURACY_GOALS=[0.9, 0.9, 0.9], GP=True, max_primitive_steps=480)
+    survey = script.Survey(env, make_baseline("rule", env, seed=0), None, dict(script.UNTUNED_VARIANT), [1, 1], 160)
+    monkeypatch.setattr(script, "make_survey", lambda *args: survey)
+
+    # Act
+    script.test_agent(Path("not_used"), episodes=2, baseline="rule", spacing=4)
+
+    # Assert
+    output = capsys.readouterr().out
+    assert "2 episodes" in output
+    assert "PLUME OVERLAP" in output
+    assert "sweep_3" in output
 
 
 def test_parse_args_reads_the_scripted_gas_option(script: ModuleType) -> None:

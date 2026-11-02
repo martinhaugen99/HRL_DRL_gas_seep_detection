@@ -1,5 +1,6 @@
 import argparse
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import gymnasium as gym
@@ -148,35 +149,43 @@ OPTION_NAMES = ["space", "plume", "border"] # in the order of the options in mak
 OPTION_COLORS = [0x00FF00, 0xFF3399, 0xFFD700] # label and trail color per option in the Meshcat view: green, pink, yellow
 STEP_DELAY = 0.1 # seconds between AUV steps in the Meshcat view (0 = full speed)
 WATCH_EPISODES = 5 # episodes in the Meshcat view (mode 5)
+MAX_OPT_LENGTH = 3 # AUV steps per decision of the variants with one option length
+SEED = 0 # the env draws the plumes and start positions from np.random at reset, so every evaluation gets the same episodes
 
-def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 1000, visualise: bool = False, baseline: str | None = None,
-               spacing: int | None = None, sources: list[int] | None = None, goal: str = "visit", goal_mean_std: float = 0.1, known_std: float = 0.1,
-               unknown_std: float = 0.8, max_unknown_cells: int = 10, scripted_gas: bool = False):
+@dataclass
+class Survey:
+    """The env and the meta agent of an evaluation."""
+
+    env: HierarchicalEnv
+    model: object  # a PPO model or a ScriptedMeta: both have predict
+    gp_vis: object
+    variant: dict
+    sources: list[int]
+    max_eps_len: int
+
+
+def make_survey(model_path: Path, visualise: bool = False, baseline: str | None = None, spacing: int | None = None, sources: list[int] | None = None,
+                goal: str = "visit", goal_mean_std: float = 0.1, known_std: float = 0.1, unknown_std: float = 0.8, max_unknown_cells: int = 10,
+                scripted_gas: bool = False) -> Survey:
     """
-    Run the trained meta agent or a baseline for a number of episodes and print the mean +- std of the results.
+    Build the env and the meta agent of an evaluation.
     model_path: the meta agent model; training_config.json is read from the same folder (not used with a baseline)
-    deterministic: the meta agent takes its most likely action (True) or samples it, as in training (False)
-    visualise: show the episodes in the Meshcat browser view, slowed down by STEP_DELAY, with a label of the sub-agent
-        in control and a pause after each episode
+    visualise: show the episodes in the Meshcat browser view
     baseline: a meta agent without learning instead of the model, see baselines.py. It uses the untuned variant.
     spacing: replace the space sub-agent with a scripted lawnmower option, tracks this many cells apart
     scripted_gas: replace the plume and border sub-agents with GasFillOption, as a benchmark for them
     sources: the smallest and largest number of gas sources per episode (None: as in the model's training)
     goal, goal_mean_std, known_std, unknown_std, max_unknown_cells: the meta agent's end goal, see GPWrapper (goal is its goal_mode)
     """
-
     VISUALISE = visualise
     GP = True
     VIS_GP = False
-    VIS_STATE_SPACE = False
-    SEED = 0 # the env draws the plumes and start positions from np.random at reset, so every evaluation gets the same episodes
 
     # Load config from the same folder
     config = {} if baseline else load_training_config_from_model(model_path)
     kernel_config = config.get("HRL_HYPERPARAMETERS", {}).get("kernel_config", None)
     MULTIPLE_GAUSSIANS = sources or config.get("HRL_HYPERPARAMETERS", {}).get("MULTIPLE_GAUSSIANS") or [1,1]
     print(MULTIPLE_GAUSSIANS)
-    MAX_OPT_LENGTH = 3#config.get("HRL_HYPERPARAMETERS", {}).get("MAX_OPT_LENGTH", None)
     ACCURACY_GOALS = [0.9,0.9,0.9]
     VARIANT, SURVEY_STEPS = hrl_variant_from_config(config, UNTUNED_VARIANT, UNTUNED_SURVEY_STEPS)
     env, gp_vis = make_test_env(GP=GP, VIS_GP=VIS_GP, VISUALISE=VISUALISE,kernel_config=kernel_config,MULTIPLE_GAUSSIANS = MULTIPLE_GAUSSIANS,MAX_OPT_LENGTH=MAX_OPT_LENGTH,ACCURACY_GOALS=ACCURACY_GOALS,
@@ -186,15 +195,25 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
     # Load HIGH-LEVEL model (the one you trained in train.py)
     # CNN reconstruction for downsampling. NOTE: if you did not train an agent yet, you can simply use the CNN defined
     model = make_baseline(baseline, env, SEED) if baseline else PPO.load(model_path)
-    try:
-        cnn=CNN(layers = 3) # the original design was a resulting 4x4 downsampled state space
-    except Exception as e:
-        print(f"Failed to load model ({e}), using default CNN")
-
-
-
-
     MAX_EPS_LEN = config["ENVIRONMENT"]["max_episode_length"] if config else SURVEY_STEPS // min(VARIANT["option_lengths"]) # e.g. 90
+    return Survey(env, model, gp_vis, VARIANT, MULTIPLE_GAUSSIANS, MAX_EPS_LEN)
+
+
+def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 1000, visualise: bool = False, baseline: str | None = None,
+               spacing: int | None = None, sources: list[int] | None = None, goal: str = "visit", goal_mean_std: float = 0.1, known_std: float = 0.1,
+               unknown_std: float = 0.8, max_unknown_cells: int = 10, scripted_gas: bool = False):
+    """
+    Run the trained meta agent or a baseline for a number of episodes and print the mean +- std of the results.
+    deterministic: the meta agent takes its most likely action (True) or samples it, as in training (False)
+    visualise: slow the Meshcat view down by STEP_DELAY, with a label of the sub-agent in control and a pause after each episode
+    The other settings are those of make_survey.
+    """
+    VISUALISE = visualise
+    GP = True
+    VIS_STATE_SPACE = False
+    survey = make_survey(model_path, visualise, baseline, spacing, sources, goal, goal_mean_std, known_std, unknown_std, max_unknown_cells, scripted_gas)
+    env, model, gp_vis, VARIANT, MULTIPLE_GAUSSIANS, MAX_EPS_LEN = survey.env, survey.model, survey.gp_vis, survey.variant, survey.sources, survey.max_eps_len
+    cnn = CNN(layers = 3) # the original design was a resulting 4x4 downsampled state space
 
     env.visualise_env = VISUALISE # allowing the simulator to update within an option
     env.step_delay = STEP_DELAY
@@ -460,8 +479,8 @@ def manual_control():
     env.close()
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse the command line: the meta agent model and the mode (None: ask for it)."""
+def make_parser() -> argparse.ArgumentParser:
+    """The command line of an evaluation: the meta agent and the survey settings."""
     parser = argparse.ArgumentParser(description="Evaluate a trained HRL meta agent (PPO).")
     parser.add_argument(
         "--model",
@@ -506,7 +525,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="with --goal estimate: the largest connected unknown area, in cells, that still lets the episode end (default: 10)",
     )
     parser.add_argument("--episodes", type=int, default=1000, help="number of episodes for modes 1 and 4 (default: 1000)")
-    return parser.parse_args(argv)
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the command line: the meta agent model and the mode (None: ask for it)."""
+    return make_parser().parse_args(argv)
+
+
+def survey_settings(args: argparse.Namespace) -> dict:
+    """The settings of make_survey from the command line. --baseline lawnmower has tracks 2 cells apart by default."""
+    spacing = args.spacing if args.spacing is not None or args.baseline != "lawnmower" else 2
+    return {"baseline": args.baseline, "spacing": spacing, "sources": args.sources, "goal": args.goal, "goal_mean_std": args.goal_mean_std,
+            "known_std": args.known_std, "unknown_std": args.unknown_std, "max_unknown_cells": args.max_unknown_cells, "scripted_gas": args.scripted_gas}
 
 
 if __name__ == "__main__":
@@ -516,9 +547,7 @@ if __name__ == "__main__":
         "Enter mode (1 for trained agent, 2 manual control, 3 for validation mode, 4 for trained agent with sampled actions "
         "and 5 to watch the trained agent in Meshcat): "
     ))
-    spacing = args.spacing if args.spacing is not None or args.baseline != "lawnmower" else 2
-    survey = {"baseline": args.baseline, "spacing": spacing, "sources": args.sources, "goal": args.goal,
-              "goal_mean_std": args.goal_mean_std, "known_std": args.known_std, "unknown_std": args.unknown_std, "max_unknown_cells": args.max_unknown_cells, "scripted_gas": args.scripted_gas}
+    survey = survey_settings(args)
 
     if mode == "1":
         test_agent(args.model, episodes=args.episodes, **survey)
