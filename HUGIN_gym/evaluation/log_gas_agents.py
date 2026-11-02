@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 from stable_baselines3.common.utils import set_random_seed
 
+from HUGIN_gym.envs.core.gas_cells import nearest_distance, patch_mask, unfinished_cells
 from HUGIN_gym.evaluation.compare_maps import evaluation
 
 OPTION_NAMES = {1: "plume", 2: "border"}
@@ -36,27 +37,6 @@ COVERAGE_BINS = (
     (0.3, 0.5, "30 to 50 %"),
     (0.5, 1.01, "over 50 %"),
 )
-
-
-def unfinished_cells(
-    belief: np.ndarray, corners: np.ndarray, visited: np.ndarray, std: np.ndarray, goal_mode: str, known_std: float
-) -> np.ndarray:
-    """The cells of an estimated map that are not finished, as the end goal counts them. All maps have shape (X, Y)."""
-    cells = belief & ~corners
-    return cells & ~visited if goal_mode == "visit" else cells & (std > known_std)
-
-
-def patch_mask(shape: tuple[int, int], ix: int, iy: int, radius: int) -> np.ndarray:
-    """The cells inside the square patch around (ix, iy): what the agent sees of the map."""
-    mask = np.zeros(shape, dtype=bool)
-    mask[max(ix - radius, 0) : ix + radius + 1, max(iy - radius, 0) : iy + radius + 1] = True
-    return mask
-
-
-def nearest_distance(cells: np.ndarray, ix: int, iy: int) -> float:
-    """The distance in cells from (ix, iy) to the nearest marked cell, infinite if there is none."""
-    xs, ys = np.nonzero(cells)
-    return float(np.sqrt(np.min((xs - ix) ** 2 + (ys - iy) ** 2))) if len(xs) else float("inf")
 
 
 def own_belief(base, option: int) -> np.ndarray:

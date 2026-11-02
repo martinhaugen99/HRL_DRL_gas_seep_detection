@@ -11,58 +11,11 @@ from HUGIN_gym.envs.HUGIN_env import HUGIN
 from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
 from HUGIN_gym.evaluation.baselines import make_baseline
 from HUGIN_gym.evaluation.log_gas_agents import (
-    nearest_distance,
     parse_args,
-    patch_mask,
     run_episode,
     save_rows,
     summarise,
-    unfinished_cells,
 )
-
-
-def empty_map() -> np.ndarray:
-    return np.zeros((41, 41), dtype=bool)
-
-
-def test_unfinished_cells_follow_the_end_goal() -> None:
-    # Arrange: three gas cells: one visited, one well known, and the corner cell, which is not gas
-    belief, corners, visited = empty_map(), empty_map(), empty_map()
-    belief[0, 0] = belief[5, 5] = belief[6, 6] = belief[7, 7] = True
-    corners[0, 0] = True
-    visited[5, 5] = True
-    std = np.full((41, 41), 0.5)
-    std[6, 6] = 0.05
-
-    # Act
-    for_visit = unfinished_cells(belief, corners, visited, std, "visit", 0.1)
-    for_estimate = unfinished_cells(belief, corners, visited, std, "estimate", 0.1)
-
-    # Assert
-    assert sorted(zip(*np.nonzero(for_visit), strict=True)) == [(6, 6), (7, 7)]
-    assert sorted(zip(*np.nonzero(for_estimate), strict=True)) == [(5, 5), (7, 7)]
-
-
-def test_patch_mask_is_the_square_around_the_cell() -> None:
-    # Act
-    middle = patch_mask((41, 41), 20, 20, 3)
-    corner = patch_mask((41, 41), 0, 0, 3)
-
-    # Assert: 7 x 7 cells, cut off by the edge of the map
-    assert middle.sum() == 49
-    assert middle[17, 17] and middle[23, 23] and not middle[16, 20]
-    assert corner.sum() == 16
-
-
-def test_nearest_distance() -> None:
-    # Arrange
-    cells = empty_map()
-    cells[10, 14] = True
-    cells[30, 30] = True
-
-    # Act and Assert
-    assert nearest_distance(cells, 10, 10) == 4.0
-    assert nearest_distance(empty_map(), 10, 10) == float("inf")
 
 
 def make_row(**values: object) -> dict:

@@ -3,23 +3,12 @@
 import numpy as np
 from scipy import ndimage
 
-
-def overlap(a: np.ndarray, b: np.ndarray) -> float:
-    """Cells in both maps divided by cells in either map (intersection over union). 1.0 means identical maps."""
-    union = np.sum(a | b)
-    return float(np.sum(a & b) / union) if union else 1.0
+from HUGIN_gym.envs.core.gas_cells import gp_maps, overlap
 
 
 def share(part: np.ndarray, whole: np.ndarray) -> float:
     """Share of the cells of whole that are also in part. 1.0 if whole is empty."""
     return float(np.sum(part & whole) / np.sum(whole)) if whole.any() else 1.0
-
-
-def gp_maps(gp_mean: np.ndarray, c_threshold: float, c_width: float) -> tuple[np.ndarray, np.ndarray]:
-    """The plume and border cells of the GP's estimate, from its mean concentration."""
-    plume = gp_mean > c_threshold
-    border = (gp_mean > c_threshold - c_width) & (gp_mean <= c_threshold + c_width)
-    return plume, border
 
 
 def map_metrics(
