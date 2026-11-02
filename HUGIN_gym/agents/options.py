@@ -4,6 +4,8 @@ import numpy as np
 import torch as th
 from scipy.ndimage import binary_dilation
 
+from HUGIN_gym.envs.core.gas_cells import patch_mask, unfinished_cells
+
 FORWARD, LEFT, RIGHT = 0, 3, 4  # the actions that move the AUV on the 2D map; up and down always hit the edge there
 QUARTER_TURN = np.pi / 2
 KNOWN_STD = 0.05  # a sweep waypoint with a lower GP std is already measured, so the sweep skips it
@@ -169,12 +171,60 @@ class GasFillOption(ScriptedOption):
 
     def act(self, obs: dict) -> int:
         base = self.base_env
-        corners = self.gp_env.corner_mask[:, :, 0]
-        gas = (base.GT_c_over_threshold_maps | base.GT_c_around_threshold_maps)[:, :, 0] & ~corners
+        gas = (base.GT_c_over_threshold_maps | base.GT_c_around_threshold_maps)[:, :, 0]
         std = self.gp_env.GP_std
-        if self.gp_env.goal_mode == "visit":
-            unfinished = gas & ~base.state["visited_map"][:, :, 0, 0]
-        else:
-            unfinished = gas & (std > self.gp_env.known_std)
+        unfinished = unfinished_cells(gas, self.gp_env.corner_mask[:, :, 0], base.state["visited_map"][:, :, 0, 0], std, self.gp_env.goal_mode, self.gp_env.known_std)
         targets = unfinished if unfinished.any() else std >= np.percentile(std, 99)
         return self._first_action_to(*self._pose(), targets)
+
+
+class HandoverOption(ScriptedOption):
+    """A trained plume or border agent with a scripted way to its target.
+
+    These agents only see a 7 x 7 patch around the AUV. Inside a survey they finish a target cell in about 9 of 10
+    decisions when one is within 3 cells, and almost never when none is in view. So while no unfinished cell of the
+    agent's own map is in its patch, a shortest path brings the AUV to the nearest one. Then the trained agent decides.
+    """
+
+    def __init__(self, base_env, gp_env, trained, belief_map: str) -> None:
+        """trained: the trained agent, an Option. belief_map: its own estimated map, the name of an attribute of base_env."""
+        super().__init__(base_env, gp_env, trained.name)
+        self.trained = trained
+        self.belief_map = belief_map
+
+    def act(self, obs: dict) -> int:
+        base = self.base_env
+        target = unfinished_cells(
+            getattr(base, self.belief_map)[:, :, 0],
+            self.gp_env.corner_mask[:, :, 0],
+            base.state["visited_map"][:, :, 0, 0],
+            self.gp_env.GP_std,
+            self.gp_env.goal_mode,
+            self.gp_env.known_std,
+        )
+        ix, iy, _iz = base._pos_to_idx(base.state["x"], base.state["y"], base.state["z"])
+        if not target.any() or (target & patch_mask(target.shape, ix, iy, base.patch_radius)).any():
+            return self.trained.act(obs)
+        return self._first_action_to(*self._pose(), target)
+
+    def value(self, obs: dict) -> float:
+        return self.trained.value(obs)
+
+
+def survey_options(trained: list, base_env, gp_env, spacing: int | None = None, handover: bool = False, scripted_gas: bool = False) -> list:
+    """The options of a survey, from the trained space, plume and border agents, in that order.
+
+    A trained agent that gets replaced can be None, so that its model does not have to be loaded.
+    spacing: a scripted lawnmower with tracks this many cells apart instead of the space agent
+    handover: the plume and border agents with a scripted way to their target (HandoverOption)
+    scripted_gas: a scripted gas option instead of the plume and border agents, as a benchmark for them
+    """
+    first, plume, border = trained
+    if spacing is not None:
+        first = SweepOption(base_env, gp_env, spacing, name=f"lawnmower sweep, tracks {spacing} cells apart")
+    if scripted_gas:
+        plume, border = GasFillOption(base_env, gp_env), GasFillOption(base_env, gp_env)
+    elif handover:
+        plume = HandoverOption(base_env, gp_env, plume, "GT_c_over_threshold_maps")
+        border = HandoverOption(base_env, gp_env, border, "GT_c_around_threshold_maps")
+    return [first, plume, border]

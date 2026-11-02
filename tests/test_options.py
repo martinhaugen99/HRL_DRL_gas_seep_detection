@@ -13,8 +13,10 @@ from HUGIN_gym.agents.options import (
     QUARTER_TURN,
     RIGHT,
     GasFillOption,
+    HandoverOption,
     Option,
     SweepOption,
+    survey_options,
 )
 from HUGIN_gym.envs.HRL_env import HierarchicalEnv
 from HUGIN_gym.envs.HUGIN_env import HUGIN
@@ -353,3 +355,148 @@ def test_rule_with_the_scripted_options_reaches_the_goal_with_several_plumes(
     # Assert
     assert terminated
     assert env.primitive_steps < 480
+
+
+class RecordingAgent:
+    """Stands in for a trained plume or border agent."""
+
+    name = "trained agent"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def act(self, obs: dict) -> int:
+        self.calls += 1
+        return LEFT
+
+    def value(self, obs: dict) -> float:
+        return 12.0
+
+
+def make_handover(goal_mode: str = "visit") -> tuple[HUGIN, SimpleNamespace, RecordingAgent, HandoverOption]:
+    base, gp, _ = make_gas_fill(goal_mode)
+    agent = RecordingAgent()
+    return base, gp, agent, HandoverOption(base, gp, agent, "GT_c_around_threshold_maps")
+
+
+def test_handover_goes_to_the_target_while_the_agent_cannot_see_it() -> None:
+    # Arrange: a border cell 10 cells ahead, outside the 7 x 7 patch
+    base, _, agent, option = make_handover()
+    base.GT_c_around_threshold_maps[0 + 20, -10 + 20] = True
+
+    # Act
+    action = option.act({})
+
+    # Assert
+    assert action == FORWARD
+    assert agent.calls == 0
+
+
+def test_handover_lets_the_trained_agent_decide_when_it_sees_the_target() -> None:
+    # Arrange: a border cell 3 cells ahead, inside the patch
+    base, _, agent, option = make_handover()
+    base.GT_c_around_threshold_maps[-7 + 20, -10 + 20] = True
+
+    # Act
+    action = option.act({})
+
+    # Assert
+    assert action == LEFT
+    assert agent.calls == 1
+
+
+def test_handover_brings_the_auv_into_view_and_then_hands_over() -> None:
+    # Arrange
+    base, _, agent, option = make_handover()
+    base.GT_c_around_threshold_maps[0 + 20, -10 + 20] = True
+
+    # Act
+    for _ in range(4):
+        base.step(FORWARD if agent.calls == 0 else option.act({}))
+        option.act({})
+        if agent.calls:
+            break
+
+    # Assert: 10 cells away: after 2 forward moves of 2 cells it is 6 away, after 4 moves it is within 3 cells
+    assert agent.calls == 1
+
+
+def test_handover_counts_only_the_map_of_the_agent() -> None:
+    # Arrange: plume cells near the AUV, and the border agent's own cell far away
+    base, _, agent, option = make_handover()
+    base.GT_c_over_threshold_maps[-8 + 20, -10 + 20] = True
+    base.GT_c_around_threshold_maps[10 + 20, -10 + 20] = True
+
+    # Act
+    option.act({})
+
+    # Assert
+    assert agent.calls == 0
+
+
+def test_handover_with_the_estimate_goal_targets_cells_that_are_not_known() -> None:
+    # Arrange: a known border cell nearby, and an unknown one far away
+    base, gp, agent, option = make_handover("estimate")
+    base.GT_c_around_threshold_maps[-8 + 20, -10 + 20] = True
+    gp.GP_std[-8 + 20, -10 + 20] = 0.05
+    base.GT_c_around_threshold_maps[10 + 20, -10 + 20] = True
+
+    # Act
+    option.act({})
+
+    # Assert: it does not hand over for the known cell
+    assert agent.calls == 0
+
+
+def test_handover_with_no_target_left_lets_the_trained_agent_decide() -> None:
+    # Arrange
+    _, _, agent, option = make_handover()
+
+    # Act
+    option.act({})
+
+    # Assert
+    assert agent.calls == 1
+
+
+def test_handover_keeps_the_name_and_the_value_of_the_trained_agent() -> None:
+    # Arrange
+    _, _, _, option = make_handover()
+
+    # Act and Assert: minimal_values reads the critic of the sub-agents
+    assert option.name == "trained agent"
+    assert option.value({}) == 12.0
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected"),
+    [
+        ({}, (RecordingAgent, RecordingAgent, RecordingAgent)),
+        ({"spacing": 6}, (SweepOption, RecordingAgent, RecordingAgent)),
+        ({"handover": True}, (RecordingAgent, HandoverOption, HandoverOption)),
+        ({"spacing": 6, "handover": True}, (SweepOption, HandoverOption, HandoverOption)),
+        ({"spacing": 6, "scripted_gas": True}, (SweepOption, GasFillOption, GasFillOption)),
+    ],
+)
+def test_survey_options_builds_the_options_of_a_survey(settings: dict, expected: tuple) -> None:
+    # Arrange
+    base, gp, _ = make_gas_fill()
+    trained = [RecordingAgent(), RecordingAgent(), RecordingAgent()]
+
+    # Act
+    options = survey_options(trained, base, gp, **settings)
+
+    # Assert
+    assert tuple(type(option) for option in options) == expected
+
+
+def test_survey_options_gives_each_gas_agent_its_own_map() -> None:
+    # Arrange
+    base, gp, _ = make_gas_fill()
+
+    # Act
+    _, plume, border = survey_options([None, RecordingAgent(), RecordingAgent()], base, gp, spacing=6, handover=True)
+
+    # Assert
+    assert plume.belief_map == "GT_c_over_threshold_maps"
+    assert border.belief_map == "GT_c_around_threshold_maps"
