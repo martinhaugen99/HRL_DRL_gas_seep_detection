@@ -360,7 +360,7 @@ def main(argv: list[str] | None = None) -> None:
 
     evaluation.print_map_results([episode.results for episode in episodes])
     picked = pick_episodes([episode.score for episode in episodes])
-    first_option_name = "Sweep" if evaluation.survey_settings(args)["spacing"] else "Space agent"
+    first_option_name = "Sweep" if survey.settings["spacing"] else "Space agent"
     png_path = plot_comparison([(label, episodes[index]) for label, index in picked], first_option_name, args.output)
     print(f"Saved {png_path}, {png_path.with_suffix('.svg')} and {save_results(episodes, args.output)}")
 

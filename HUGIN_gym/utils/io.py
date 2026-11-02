@@ -116,6 +116,15 @@ def hrl_variant_from_config(
     if "HRL_VARIANT" not in config:
         return dict(default_variant), default_survey_steps
     variant = dict(config["HRL_VARIANT"])
-    variant.pop("preset", None)
+    for key in ("preset", "seed", "survey"):  # not settings of HierarchicalEnv
+        variant.pop(key, None)
     survey_steps = variant.pop("survey_steps")
     return variant, survey_steps
+
+
+def hrl_survey_from_config(config: dict) -> dict:
+    """The survey an HRL run trained in (options, end goal, sources), from HRL_VARIANT in its training config.
+
+    Empty for runs before run 6, which all use the trained sub-agents and the visit goal.
+    """
+    return dict(config.get("HRL_VARIANT", {}).get("survey", {}))

@@ -7,6 +7,7 @@ import pytest
 from HUGIN_gym.utils.io import (
     append_resume_log,
     find_latest_checkpoint,
+    hrl_survey_from_config,
     hrl_variant_from_config,
 )
 
@@ -91,3 +92,37 @@ def test_hrl_variant_from_config_uses_defaults_without_hrl_variant() -> None:
     assert variant == DEFAULT_VARIANT
     assert variant is not DEFAULT_VARIANT
     assert survey_steps == 480
+
+
+def test_hrl_variant_from_config_leaves_out_the_survey_and_the_seed() -> None:
+    # Arrange: as written from run 6 on
+    config = {
+        "HRL_VARIANT": {
+            "preset": "sweep6_est",
+            "survey_steps": 480,
+            "seed": 2,
+            "option_lengths": [3],
+            "reward_mode": "cells_fixed",
+            "survey": {"spacing": 6},
+        }
+    }
+
+    # Act
+    variant, _ = hrl_variant_from_config(config, DEFAULT_VARIANT, 480)
+
+    # Assert: only the HierarchicalEnv settings are left
+    assert variant == {"option_lengths": [3], "reward_mode": "cells_fixed"}
+
+
+def test_hrl_survey_from_config_reads_the_survey_of_the_run() -> None:
+    # Arrange
+    config = {"HRL_VARIANT": {"survey_steps": 480, "survey": {"spacing": 6, "goal_mode": "estimate"}}}
+
+    # Act and Assert
+    assert hrl_survey_from_config(config) == {"spacing": 6, "goal_mode": "estimate"}
+
+
+@pytest.mark.parametrize("config", [{}, {"HRL_VARIANT": {"survey_steps": 480}}])
+def test_hrl_survey_from_config_is_empty_for_runs_before_run_6(config: dict) -> None:
+    # Act and Assert
+    assert hrl_survey_from_config(config) == {}

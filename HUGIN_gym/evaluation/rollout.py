@@ -384,12 +384,13 @@ def run_episode_hrl(
 
         # ---- TERMINATION ----
         if terminated or truncated or step_count >= max_eps_len:
+            full_obs = env.current_obs # the coverages: a small meta state does not always have them
 
             if verbose:
                 print("✅ reached goal" if terminated else "❌ survey budget used up")
                 print(f"Episode finished after {step_count} decisions and {base_env_step_count} AUV steps")
                 print(f"Total reward: {episode_reward:.2f}")
-                print(f"Final coverage - SPACE: {obs['space_coverage'][0]*100:.2f}%, PLUME: {obs['plume_coverage'][0]*100:.2f}%, BORDER: {obs['border_coverage'][0]*100:.2f}%")
+                print(f"Final coverage - SPACE: {full_obs['space_coverage'][0]*100:.2f}%, PLUME: {full_obs['plume_coverage'][0]*100:.2f}%, BORDER: {full_obs['border_coverage'][0]*100:.2f}%")
 
             if vis_state_space[0] or VISUALISE:
                 if pause_at_end:
@@ -397,9 +398,9 @@ def run_episode_hrl(
                 env.base_envHUGIN.renderer.reset()
 
             return {
-                "space_coverage": obs["space_coverage"][0],
-                "plume_coverage": obs["plume_coverage"][0],
-                "border_coverage": obs["border_coverage"][0],
+                "space_coverage": full_obs["space_coverage"][0],
+                "plume_coverage": full_obs["plume_coverage"][0],
+                "border_coverage": full_obs["border_coverage"][0],
                 "reward": episode_reward,
                 "episode_turns":  env.turn_counter,
                 "base_env_steps": base_env_step_count,

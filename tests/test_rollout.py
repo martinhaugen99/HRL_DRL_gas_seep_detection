@@ -54,6 +54,7 @@ class StubHierarchicalEnv:
         self.turn_counter = 0
         self.n_decisions = n_decisions
         self.decisions = 0
+        self.current_obs = self._obs()
 
     def reset(self, **kwargs: object) -> tuple[dict, dict]:
         self.decisions = 0

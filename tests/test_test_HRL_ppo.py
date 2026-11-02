@@ -1,6 +1,7 @@
 """Tests for the command line of HUGIN_gym/evaluation/test_HRL(ppo).py."""
 
 import importlib.util
+import json
 from pathlib import Path
 from types import ModuleType
 
@@ -59,7 +60,8 @@ def test_parse_args_defaults_keep_todays_evaluation(script: ModuleType) -> None:
     assert args.baseline is None
     assert args.spacing is None
     assert args.sources is None
-    assert args.goal == "visit"
+    assert args.goal is None  # as in the model's training, otherwise visit
+    assert args.handover is False
     assert args.episodes == 1000
 
 
@@ -103,8 +105,10 @@ def test_test_agent_runs_a_whole_evaluation_without_model_files(
     base.vary_plume_size = True
     gp_env = GPWrapper(base, HRL=True)
     options = [SweepOption(base, gp_env, spacing=4), GasFillOption(base, gp_env), GasFillOption(base, gp_env)]
-    env = HierarchicalEnv(gp_env, options, gamma=0.998, MAX_OPT_LENGTH=3, ACCURACY_GOALS=[0.9, 0.9, 0.9], GP=True, max_primitive_steps=480)
-    survey = script.Survey(env, make_baseline("rule", env, seed=0), None, dict(script.UNTUNED_VARIANT), [1, 1], 160)
+    # the gas meta state has no coverages, which the results are read from
+    env = HierarchicalEnv(gp_env, options, gamma=0.998, MAX_OPT_LENGTH=3, ACCURACY_GOALS=[0.9, 0.9, 0.9], GP=True, max_primitive_steps=480, meta_state="gas")
+    settings = {"spacing": 4, "handover": False, "goal": "visit", "goal_mean_std": 0.1, "known_std": 0.1, "unknown_std": 0.8, "max_unknown_cells": 10}
+    survey = script.Survey(env, make_baseline("rule", env, seed=0), None, dict(script.UNTUNED_VARIANT), [1, 1], 160, settings)
     monkeypatch.setattr(script, "make_survey", lambda *args: survey)
 
     # Act
@@ -115,6 +119,76 @@ def test_test_agent_runs_a_whole_evaluation_without_model_files(
     assert "2 episodes" in output
     assert "PLUME OVERLAP" in output
     assert "sweep_3" in output
+
+
+def write_config(folder: Path, survey: dict | None) -> Path:
+    """A training_config.json as a run writes it, and the path of its model."""
+    variant = {"preset": "test", "survey_steps": 480, "seed": 1, "option_lengths": [3], "smdp_discount": False, "reward_mode": "cells_fixed", "meta_state": "gas"}
+    if survey is not None:
+        variant["survey"] = survey
+    config = {"HRL_VARIANT": variant, "HRL_HYPERPARAMETERS": {"MULTIPLE_GAUSSIANS": [1, 3]}, "ENVIRONMENT": {"max_episode_length": 160}}
+    (folder / "training_config.json").write_text(json.dumps(config))
+    return folder / "HRL_PPO_scratch.zip"
+
+
+def capture_test_env(script: ModuleType, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """make_survey without model files: returns the settings it gives make_test_env."""
+    captured: dict = {}
+
+    def fake_test_env(**settings: object) -> tuple[object, None]:
+        captured.update(settings)
+        return object(), None
+
+    monkeypatch.setattr(script, "make_test_env", fake_test_env)
+    monkeypatch.setattr(script.PPO, "load", lambda path: object())
+    return captured
+
+
+def test_make_survey_evaluates_a_model_in_the_survey_it_trained_in(script: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    survey = {"spacing": 6, "handover": True, "goal_mode": "estimate", "goal_mean_std": 0.26, "known_std": 0.07, "bonus_mode": "patch"}
+    model = write_config(tmp_path, survey)
+    captured = capture_test_env(script, monkeypatch)
+
+    # Act
+    result = script.make_survey(model)
+
+    # Assert
+    assert (captured["SPACING"], captured["HANDOVER"], captured["GOAL"]) == (6, True, "estimate")
+    assert (captured["GOAL_MEAN_STD"], captured["KNOWN_STD"], captured["BONUS_MODE"]) == (0.26, 0.07, "patch")
+    assert captured["MULTIPLE_GAUSSIANS"] == [1, 3]
+    assert captured["VARIANT"] == {"option_lengths": [3], "smdp_discount": False, "reward_mode": "cells_fixed", "meta_state": "gas"}
+    assert result.settings["goal"] == "estimate"
+
+
+def test_make_survey_lets_the_command_line_override_the_training(script: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    model = write_config(tmp_path, {"spacing": 6, "goal_mode": "estimate", "goal_mean_std": 0.26})
+    captured = capture_test_env(script, monkeypatch)
+
+    # Act
+    script.make_survey(model, spacing=4, sources=[2, 2], goal="visit", goal_mean_std=0.1)
+
+    # Assert
+    assert (captured["SPACING"], captured["GOAL"], captured["GOAL_MEAN_STD"]) == (4, "visit", 0.1)
+    assert captured["MULTIPLE_GAUSSIANS"] == [2, 2]
+
+
+def test_make_survey_keeps_the_old_survey_for_runs_before_run_6(script: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    model = write_config(tmp_path, None)
+    captured = capture_test_env(script, monkeypatch)
+
+    # Act
+    script.make_survey(model)
+
+    # Assert
+    assert (captured["SPACING"], captured["HANDOVER"], captured["GOAL"], captured["BONUS_MODE"]) == (None, False, "visit", "coverage")
+
+
+def test_parse_args_reads_the_handover(script: ModuleType) -> None:
+    # Act and Assert
+    assert script.parse_args(["--handover"]).handover is True
 
 
 def test_parse_args_reads_the_scripted_gas_option(script: ModuleType) -> None:
