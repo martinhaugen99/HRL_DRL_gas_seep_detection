@@ -3,15 +3,18 @@ import gymnasium as gym
 from scipy import ndimage
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, RBF, WhiteKernel, ConstantKernel as C
+from HUGIN_gym.envs.core.gas_cells import gp_maps, nearest_distance, overlap
 from HUGIN_gym.envs.core.incremental_gp import IncrementalGP
 from HUGIN_gym.envs.core.rewards.agent2_plume import Reward as Reward2_plume
 #from HUGIN_gym.overlay.overlay_server import latest_values
 
 class GPWrapper(gym.Wrapper):
     GOAL_MODES = ("visit", "estimate")
+    BONUS_MODES = ("coverage", "patch", "none")
+    MIN_BONUS_PATCH_CELLS = 20 # the smallest plume with its border has about 45 cells, so a smaller patch is noise or not grown yet
 
     def __init__(self, env, kernels_config = None, gp_optimise = False, gp_visualise = False, max_points = 2000,HRL=False, SUB_AGENT_TRAIN_ON_GP =False,
-                 fast_gp=True, goal_mode="visit", goal_mean_std=0.1, known_std=0.1, unknown_std=0.8, max_unknown_cells=10):
+                 fast_gp=True, goal_mode="visit", goal_mean_std=0.1, known_std=0.1, unknown_std=0.8, max_unknown_cells=10, bonus_mode="coverage"):
         """
         fast_gp: use IncrementalGP where it gives the same result as sklearn (RBF kernel with fixed settings)
         goal_mode: the meta agent's goal. "visit": the AUV has visited the estimated plume and border cells.
@@ -22,10 +25,16 @@ class GPWrapper(gym.Wrapper):
             GP std above unknown_std has more than max_unknown_cells cells. The mean GP std alone can reach its limit
             while part of the map is unsurveyed, and a plume can hide there. A complete sweep with tracks up to 6 cells
             apart leaves no cell above 0.8.
+        bonus_mode: when the meta agent gets the +40 before the end. "coverage": when the share of the whole estimate
+            reaches the goal, again each time it falls below (GP noise can make this fire many times with one plume).
+            "patch": once per connected patch of the estimate that reaches the goal. "none": no such bonus.
         """
         super().__init__(env)
         if goal_mode not in self.GOAL_MODES:
             raise ValueError(f"goal_mode must be one of {self.GOAL_MODES}, not {goal_mode!r}")
+        if bonus_mode not in self.BONUS_MODES:
+            raise ValueError(f"bonus_mode must be one of {self.BONUS_MODES}, not {bonus_mode!r}")
+        self.bonus_mode = bonus_mode
         self.goal_mode = goal_mode
         self.goal_mean_std = goal_mean_std
         self.known_std = known_std
@@ -92,6 +101,7 @@ class GPWrapper(gym.Wrapper):
         self.gp_map_zeros = np.zeros(self.grid_shape, dtype=np.float32) # 2D thingy
         self.GP_pred=self.gp_map_zeros
         self.GP_std = np.ones(self.grid_shape) # per cell; 1 is the prior, before any measurement
+        self.paid_gas = np.zeros(self.grid_shape, dtype=bool) # the patches that got their bonus (bonus_mode "patch")
 
         kernel_settings = self.kernels_config[self.GP_key]
         if fast_gp and not gp_optimise and kernel_settings["type"] == "RBF":
@@ -224,6 +234,7 @@ class GPWrapper(gym.Wrapper):
 
         self.GP_pred=self.gp_map_zeros
         self.GP_std = np.ones(self.grid_shape)
+        self.paid_gas = np.zeros(self.grid_shape, dtype=bool)
         if self.incremental_gp is not None:
             self.incremental_gp.reset()
         self.incremental_gp_valid = True
@@ -621,15 +632,55 @@ class GPWrapper(gym.Wrapper):
         labels, n_areas = ndimage.label(self.GP_std > self.unknown_std)
         return int(np.max(np.bincount(labels.ravel())[1:])) if n_areas else 0
 
+    def gas_cells(self):
+        """The cells of the estimated plume or border, as a map of shape (X, Y)."""
+        base = self.env.unwrapped
+        return (base.GT_c_over_threshold_maps | base.GT_c_around_threshold_maps)[:, :, 0] & ~self.corner_mask[:, :, 0]
+
+    def done_cells(self):
+        """The cells that count as done for the end goal, as a map of shape (X, Y): visited, or known well enough."""
+        if self.goal_mode == "visit":
+            return self.env.unwrapped.state["visited_map"][:, :, 0, 0]
+        return self.GP_std <= self.known_std
+
+    def gas_summary(self, ix, iy):
+        """What is left to do near gas, without revealing how many plumes there are: the lowest share done among the
+        patches of the estimate found so far (1.0 with none), and the distance from (ix, iy) to the nearest unfinished cell."""
+        gas = self.gas_cells()
+        done = self.done_cells()
+        labels, n_patches = ndimage.label(gas)
+        shares = [np.mean(done[labels == patch + 1]) for patch in range(n_patches)]
+        return float(min(shares, default=1.0)), nearest_distance(gas & ~done, ix, iy)
+
+    def map_score(self):
+        """The mean overlap of the estimated plume and border with the true ones, from 0 to 1. For a training reward
+        only: it uses the true map, which the meta agent never observes."""
+        plume, border = gp_maps(self.GP_pred, self.c_thresh, self.c_std)
+        return (overlap(plume, self.original_GT_c_over[:, :, 0]) + overlap(border, self.original_GT_c_around[:, :, 0])) / 2
+
+    def _new_finished_patch(self):
+        """True once for each connected patch of the estimate that reaches the goal. A patch that is mostly paid already is the same one, grown or shrunk."""
+        done = self.done_cells()
+        labels, n_patches = ndimage.label(self.gas_cells())
+        for number in range(1, n_patches + 1):
+            patch = labels == number
+            n_cells = np.sum(patch)
+            if n_cells >= self.MIN_BONUS_PATCH_CELLS and np.sum(patch & self.paid_gas) < n_cells / 2 and np.sum(patch & done) / n_cells >= self.accuracy_goals[1]:
+                self.paid_gas |= patch
+                return True
+        return False
+
     def _map_is_surveyed(self):
         return self.goal_mode == "visit" or self.largest_unknown_area() <= self.max_unknown_cells
 
     def _compute_meta_subgoal_reward(self, obs):
         plume_share, border_share = self.goal_shares(obs)
         max_mean_std = (1-self.accuracy_goals[0]) if self.goal_mode == "visit" else self.goal_mean_std
-        if self.once_per_episode == False and (plume_share<self.accuracy_goals[1] or border_share< self.accuracy_goals[2]):
+        if self.bonus_mode == "patch" and self._new_finished_patch():
+            return 40.0, False
+        if self.bonus_mode == "coverage" and self.once_per_episode == False and (plume_share<self.accuracy_goals[1] or border_share< self.accuracy_goals[2]):
             self.once_per_episode = True # allowing to be rewarded for 2 or more plumes
-        if self.once_per_episode and plume_share>=self.accuracy_goals[1] and border_share>= self.accuracy_goals[2] and self.env.unwrapped.maxN_over_thresh>self.N_corners and self.env.unwrapped.maxN_around_thresh>self.N_corners:
+        if self.bonus_mode == "coverage" and self.once_per_episode and plume_share>=self.accuracy_goals[1] and border_share>= self.accuracy_goals[2] and self.env.unwrapped.maxN_over_thresh>self.N_corners and self.env.unwrapped.maxN_around_thresh>self.N_corners:
             self.once_per_episode = False
             reward = 40.0 # bonus for reaching the subgoal, to
             terminated = False # we want to explore at least 80% of the rest

@@ -1,10 +1,14 @@
 """Tests for the option loop of HierarchicalEnv: discounting inside an option, option lengths, rewards, meta states."""
 
+from typing import Any
+
 import gymnasium as gym
 import numpy as np
 import pytest
 
 from HUGIN_gym.envs.HRL_env import HierarchicalEnv
+from HUGIN_gym.envs.HUGIN_env import HUGIN
+from HUGIN_gym.envs.wrappers.GPWrapper import GPWrapper
 
 GAMMA = 0.9
 SPACE_STEP_REWARD = 1 / 6 - 1  # space option: one new cell per step, minus the time penalty
@@ -333,3 +337,235 @@ def test_minimal_values_meta_state_adds_the_sub_agent_values() -> None:
     # Assert: symlog of the values
     np.testing.assert_allclose(obs["subagent_values"], [np.log1p(10.0), -np.log1p(3.0)], rtol=1e-6)
     assert env.observation_space.contains(obs)
+
+
+class GoalStubEnv(StubBaseEnv):
+    """StubBaseEnv with the GP methods of the new reward modes. Each step visits one new cell if progress is set."""
+
+    def __init__(self, end_step: int | None = None, progress: bool = False, score_step: float = 0.0, event_step: int | None = None) -> None:
+        super().__init__(end_step, progress)
+        self.corner_mask = np.zeros((10, 10, 1), dtype=bool)
+        self.GT_c_over_threshold_maps = np.zeros((10, 10, 1), dtype=bool)
+        self.GT_c_around_threshold_maps = np.zeros((10, 10, 1), dtype=bool)
+        self.score_step = score_step
+        self.event_step = event_step
+        self.shares = (1.0, 1.0)
+
+    def done_cells(self) -> np.ndarray:
+        return self.state["visited_map"][:, :, 0, 0]
+
+    def goal_shares(self, obs: dict) -> tuple[float, float]:
+        return self.shares
+
+    def map_score(self) -> float:
+        return self.steps * self.score_step
+
+    def step(self, action: int) -> tuple[dict, float, bool, bool, dict]:
+        obs, reward, terminated, truncated, info = super().step(action)
+        self.MEAN_uncertainty = 1.0 - self.steps * self.score_step
+        if self.steps == self.event_step:
+            reward = 40.0
+        return obs, reward, terminated, truncated, info
+
+
+def make_goal_env(reward_mode: str, *stub_args: Any, options: int = 3, **settings: Any) -> tuple[HierarchicalEnv, GoalStubEnv]:
+    stub = GoalStubEnv(*stub_args, **{key: settings.pop(key) for key in ("score_step", "event_step") if key in settings})
+    env = HierarchicalEnv(
+        stub,
+        [StubOption() for _ in range(options)],
+        gamma=GAMMA,
+        MAX_OPT_LENGTH=3,
+        ACCURACY_GOALS=[0.9, 0.9, 0.9],
+        GP=True,
+        reward_mode=reward_mode,
+        **settings,
+    )
+    env.reset()
+    return env, stub
+
+
+TIME_ONLY = -(1 + GAMMA + GAMMA**2)
+
+
+@pytest.mark.parametrize(
+    ("option", "plume_cells", "border_cells", "per_step"),
+    [
+        (1, True, False, 2 / 6),  # the plume agent is paid for plume cells
+        (1, False, True, 1 / 12),  # and not for border cells, which runs 4 and 5 paid it for
+        (2, False, True, 2 / 6),  # the border agent is paid for border cells
+        (2, True, False, 1 / 12),
+    ],
+)
+def test_cells_fixed_pays_each_gas_agent_for_its_own_cells(option: int, plume_cells: bool, border_cells: bool, per_step: float) -> None:
+    # Arrange: every cell the AUV visits is gas of one kind
+    env, stub = make_goal_env("cells_fixed", None, True)
+    stub.GT_c_over_threshold_maps[:] = plume_cells
+    stub.GT_c_around_threshold_maps[:] = border_cells
+
+    # Act
+    _, reward, _, _, _ = env.step(option)
+
+    # Assert
+    assert reward == pytest.approx(discounted_sum(per_step - 1, 3))
+
+
+def test_cells_fixed_pays_the_sweep_only_when_no_found_gas_is_waiting() -> None:
+    # Arrange
+    env, stub = make_goal_env("cells_fixed", None, True)
+
+    # Act
+    _, free_reward, _, _, _ = env.step(0)
+    stub.shares = (0.5, 1.0)  # a found plume is unfinished
+    _, waiting_reward, _, _, _ = env.step(0)
+
+    # Assert
+    assert free_reward == pytest.approx(discounted_sum(1 / 6 - 1, 3))
+    assert waiting_reward == pytest.approx(TIME_ONLY)
+
+
+@pytest.mark.parametrize("settings", [{"option_lengths": [2, 5], "smdp_discount": True}, {}])
+def test_cells_fixed_costs_the_same_per_idle_step_for_every_option_length(settings: dict) -> None:
+    # Arrange: runs 4 and 5 charged -2 only after 3 idle steps, which a 2-step option never reaches
+    env, _ = make_goal_env("cells_fixed", None, False, **settings)
+
+    # Act
+    _, reward, _, _, info = env.step(0)
+
+    # Assert
+    assert reward == pytest.approx(discounted_sum(-1 - 2 / 3, info["option_length"]))
+
+
+def test_map_gain_pays_for_a_better_map_whichever_option_caused_it() -> None:
+    # Arrange: the map score rises and the mean GP std falls by 0.01 per step
+    env, _ = make_goal_env("map_gain", None, True, score_step=0.01)
+
+    # Act
+    rewards = [env.step(option)[1] for option in (0, 1, 2)]
+
+    # Assert: 200 * 0.01 for the map + 100 * 0.01 for the std - 1 for the time
+    for reward in rewards:
+        assert reward == pytest.approx(discounted_sum(2.0 + 1.0 - 1.0, 3))
+
+
+def test_map_gain_also_counts_on_a_step_with_the_end_bonus() -> None:
+    # Arrange: the second step has the +40
+    env, _ = make_goal_env("map_gain", None, True, score_step=0.01, event_step=2)
+
+    # Act
+    _, reward, _, _, _ = env.step(0)
+
+    # Assert: the bonus replaces the time penalty of that step, but the map still counts
+    expected = (2.0 + 1.0 - 1.0) + GAMMA * (40.0 + 3.0) + GAMMA**2 * (2.0 + 1.0 - 1.0)
+    assert reward == pytest.approx(expected)
+
+
+def test_unknown_reward_mode_raises() -> None:
+    # Act and Assert
+    with pytest.raises(ValueError, match="reward_mode"):
+        make_env(reward_mode="points")
+
+
+def test_new_reward_modes_need_the_gp() -> None:
+    # Act and Assert
+    with pytest.raises(ValueError, match="need the GP"):
+        HierarchicalEnv(StubBaseEnv(), [StubOption()], gamma=GAMMA, MAX_OPT_LENGTH=3, ACCURACY_GOALS=[0.9, 0.9, 0.9], GP=False, reward_mode="map_gain")
+
+
+class FixedActionOption:
+    """Always the same action of the AUV."""
+
+    name = "fixed"
+
+    def __init__(self, action: int) -> None:
+        self.action = action
+
+    def act(self, obs: dict) -> int:
+        return self.action
+
+    def value(self, obs: dict) -> float:
+        return 0.0
+
+
+def make_real_env(meta_state: str, action: int = 0) -> tuple[HierarchicalEnv, HUGIN]:
+    """The real base env and GP, with a plume at the start of the AUV."""
+    base = HUGIN()
+    base.train = False
+    base.GP_ON = True
+    base.agent_type = "META"  # type: ignore[attr-defined]  # set by the scripts, not in HUGIN.__init__
+    base.gaussian_centers = np.array([[0.0, 0.0, 0.0]])
+    gp_env = GPWrapper(base, HRL=True)
+    env = HierarchicalEnv(
+        gp_env,
+        [FixedActionOption(action), FixedActionOption(action), FixedActionOption(action)],
+        gamma=0.998,
+        MAX_OPT_LENGTH=3,
+        ACCURACY_GOALS=[0.9, 0.9, 0.9],
+        GP=True,
+        max_primitive_steps=480,
+        meta_state=meta_state,
+    )
+    return env, base
+
+
+def test_gas_meta_state_at_the_start_shows_nothing_found() -> None:
+    # Arrange
+    env, _ = make_real_env("gas")
+
+    # Act
+    obs, _ = env.reset()
+
+    # Assert
+    assert env.observation_space.contains(obs)
+    assert obs["time_used"][0] == 0.0
+    assert obs["plume_found"][0] == 0.0
+    assert obs["unknown_share"][0] == 1.0  # the GP knows nothing yet
+    assert obs["lowest_patch_share"][0] == 1.0  # no gas is waiting
+    assert obs["nearest_unfinished"][0] == 1.0
+    assert obs["last_idle"][0] == 0.0
+    np.testing.assert_array_equal(obs["last_option"], [0, 0, 0])
+
+
+def test_gas_meta_state_after_finding_gas_shows_what_is_left() -> None:
+    # Arrange: the AUV starts inside the plume
+    env, _ = make_real_env("gas")
+    env.reset()
+
+    # Act
+    obs, _, _, _, _ = env.step(1)
+
+    # Assert
+    assert env.observation_space.contains(obs)
+    assert obs["plume_found"][0] == 1.0
+    assert obs["time_used"][0] == pytest.approx(3 / 480)
+    assert obs["unknown_share"][0] < 1.0
+    np.testing.assert_array_equal(obs["last_option"], [0, 1, 0])
+    assert obs["last_idle"][0] == 0.0
+
+
+def test_gas_meta_state_shows_when_the_last_decision_made_no_progress() -> None:
+    # Arrange: up is outside the 2D map, so the AUV stays where it is
+    up = 1
+    env, _ = make_real_env("gas", action=up)
+    env.reset()
+
+    # Act
+    obs, _, _, _, info = env.step(2)
+
+    # Assert: the rule baseline uses the same signal, so the meta agent can too
+    assert info["option_length"] == 3
+    assert obs["last_idle"][0] == 1.0
+    np.testing.assert_array_equal(obs["last_option"], [0, 0, 1])
+
+
+def test_gas_no_time_meta_state_leaves_out_only_the_time() -> None:
+    # Arrange
+    with_time, _ = make_real_env("gas")
+    without_time, _ = make_real_env("gas_no_time")
+
+    # Act
+    obs, _ = without_time.reset()
+
+    # Assert
+    assert isinstance(with_time.observation_space, gym.spaces.Dict) and isinstance(without_time.observation_space, gym.spaces.Dict)
+    assert set(with_time.observation_space.spaces) - set(without_time.observation_space.spaces) == {"time_used"}
+    assert without_time.observation_space.contains(obs)

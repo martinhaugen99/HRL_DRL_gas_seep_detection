@@ -287,3 +287,112 @@ def test_unknown_goal_mode_raises() -> None:
     # Act and Assert
     with pytest.raises(ValueError, match="goal_mode"):
         GPWrapper(HUGIN(), goal_mode="guess")
+
+
+def test_map_score_is_the_mean_overlap_with_the_true_map() -> None:
+    # Arrange: the estimate is exactly the true concentration
+    base, gp = make_meta_env()
+    gp.reset()
+    empty_score = gp.map_score()
+
+    # Act
+    gp.GP_pred = base.conc[:, :, 0].astype(float)
+    perfect_score = gp.map_score()
+
+    # Assert
+    assert empty_score == 0.0
+    assert perfect_score > 0.99
+
+
+def make_bonus_env() -> tuple[HUGIN, GPWrapper, dict]:
+    """A plume patch of 25 cells that the GP knows well, with a low mean GP std, but too high to end the episode."""
+    base, gp, not_visited = make_goal_env(goal_mode="estimate", goal_mean_std=0.01, bonus_mode="patch")
+    base.GT_c_over_threshold_maps[:] = gp.corner_mask
+    base.GT_c_around_threshold_maps[:] = gp.corner_mask
+    base.GT_c_over_threshold_maps[10:15, 10:15] = True
+    gp.GP_std[:] = 0.5
+    gp.GP_std[10:15, 10:15] = 0.05
+    return base, gp, not_visited
+
+
+def test_patch_bonus_is_paid_once_for_a_finished_patch() -> None:
+    # Arrange
+    _, gp, obs = make_bonus_env()
+
+    # Act and Assert: GP noise around the goal does not pay again
+    assert gp._compute_meta_subgoal_reward(obs) == (40.0, False)
+    assert gp._compute_meta_subgoal_reward(obs) == (0.0, False)
+    gp.GP_std[10:15, 10] = 0.5  # the patch falls below the goal
+    assert gp._compute_meta_subgoal_reward(obs) == (0.0, False)
+    gp.GP_std[10:15, 10] = 0.05  # and reaches it again
+    assert gp._compute_meta_subgoal_reward(obs) == (0.0, False)
+
+
+def test_patch_bonus_is_paid_again_for_a_second_plume() -> None:
+    # Arrange
+    base, gp, obs = make_bonus_env()
+    gp._compute_meta_subgoal_reward(obs)
+
+    # Act: a second plume is found and finished
+    base.GT_c_over_threshold_maps[25:30, 25:30] = True
+    gp.GP_std[25:30, 25:30] = 0.05
+
+    # Assert
+    assert gp._compute_meta_subgoal_reward(obs) == (40.0, False)
+    assert gp._compute_meta_subgoal_reward(obs) == (0.0, False)
+
+
+def test_patch_bonus_waits_until_the_patch_reaches_the_goal() -> None:
+    # Arrange: half of the patch is not known
+    _, gp, obs = make_bonus_env()
+    gp.GP_std[10:15, 10:12] = 0.5
+
+    # Act and Assert
+    assert gp._compute_meta_subgoal_reward(obs) == (0.0, False)
+
+
+def test_patch_bonus_ignores_a_patch_too_small_to_be_a_plume() -> None:
+    # Arrange: 4 cells, as when the GP has only just found gas
+    base, gp, obs = make_bonus_env()
+    base.GT_c_over_threshold_maps[:] = gp.corner_mask
+    base.GT_c_over_threshold_maps[10:12, 10:12] = True
+
+    # Act and Assert
+    assert gp._compute_meta_subgoal_reward(obs) == (0.0, False)
+
+
+def test_no_bonus_mode_still_ends_the_episode() -> None:
+    # Arrange
+    _, gp, obs = make_goal_env(goal_mode="estimate", goal_mean_std=0.26, bonus_mode="none")
+
+    # Act and Assert: the end check comes at once, with no bonus before it
+    assert gp._compute_meta_subgoal_reward(obs) == (40.0, True)
+
+
+def test_unknown_bonus_mode_raises() -> None:
+    # Act and Assert
+    with pytest.raises(ValueError, match="bonus_mode"):
+        GPWrapper(HUGIN(), bonus_mode="often")
+
+
+def test_gas_summary_reports_the_least_finished_patch_and_the_nearest_unfinished_cell() -> None:
+    # Arrange: a finished patch and a patch with half of its cells known
+    base, gp, _ = make_bonus_env()
+    base.GT_c_around_threshold_maps[25:27, 25:29] = True  # 8 cells
+    gp.GP_std[25:27, 25:27] = 0.05
+
+    # Act: from cell (25, 20) to the first unknown cell of the patch, (25, 27)
+    lowest_share, nearest = gp.gas_summary(25, 20)
+
+    # Assert
+    assert lowest_share == pytest.approx(0.5)
+    assert nearest == 7.0
+
+
+def test_gas_summary_with_no_gas_found() -> None:
+    # Arrange
+    _, gp = make_meta_env()
+    gp.reset()
+
+    # Act and Assert: nothing is waiting
+    assert gp.gas_summary(10, 10) == (1.0, float("inf"))
