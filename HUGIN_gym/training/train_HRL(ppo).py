@@ -13,7 +13,7 @@ from stable_baselines3 import PPO, DQN
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 
-from HUGIN_gym.agents.options import Option
+from HUGIN_gym.agents.options import Option, survey_options
 from HUGIN_gym.agents.smdp_rollout_buffer import SMDPDictRolloutBuffer
 from HUGIN_gym.envs.HRL_env import HierarchicalEnv
 from HUGIN_gym.agents.feature_extractor.agent0_HRL import AgentHRLExplore
@@ -58,7 +58,18 @@ SMOKE_CONFIG = {
 # smdp_discount: discount each decision by GAMMA**steps, needed when the lengths differ (SMDPDictRolloutBuffer)
 # mean_option_reward: a decision's reward is the mean of its step rewards, with one fixed discount per decision
 # decision_cost: subtracted per decision, so longer options pay off slightly
-# meta_state: "full" (158 inputs, AgentHRLExplore), "minimal" (6 numbers) or "minimal_values" (6 + 3 sub-agent values)
+# meta_state: "full" (158 inputs, AgentHRLExplore), "minimal" (6 numbers), "minimal_values" (6 + 3 sub-agent values),
+#   "gas" (what the end goal checks, what is left to do near gas and the last decision) or "gas_no_time" (the same without the time used)
+# reward_mode: "cells" (runs 4 and 5), "cells_fixed" (the same idea, repaired) or "map_gain" (pays for a better map), see HierarchicalEnv
+# survey (from run 6 on): the survey the meta agent works in
+#   spacing: a scripted lawnmower with tracks this many cells apart instead of the space agent (None: the space agent)
+#   handover: the plume and border agents with a scripted way to their target (HandoverOption)
+#   goal_mode, goal_mean_std, known_std, bonus_mode: the end goal and the bonus, see GPWrapper
+#   sources: the smallest and largest number of gas sources per episode; the meta agent is not told the number
+THREE_STEPS = {"option_lengths": [3], "smdp_discount": False, "mean_option_reward": False, "decision_cost": 0.0}
+SWEEP6_ESTIMATE = {"spacing": 6, "handover": True, "goal_mode": "estimate", "goal_mean_std": 0.26, "known_std": 0.1, "bonus_mode": "patch", "sources": [1, 3]}
+SWEEP4_VISIT = {"spacing": 4, "handover": True, "goal_mode": "visit", "bonus_mode": "patch", "sources": [1, 3]}
+
 PRESETS = {
     "untuned": {"option_lengths": [3], "smdp_discount": False, "mean_option_reward": False, "decision_cost": 0.0, "meta_state": "full"},
     "duration": {"option_lengths": [2, 5], "smdp_discount": True, "mean_option_reward": False, "decision_cost": 0.1, "meta_state": "full"},
@@ -66,6 +77,13 @@ PRESETS = {
     "minimal": {"option_lengths": [3], "smdp_discount": False, "mean_option_reward": False, "decision_cost": 0.0, "meta_state": "minimal"},
     "minimal_values": {"option_lengths": [3], "smdp_discount": False, "mean_option_reward": False, "decision_cost": 0.0, "meta_state": "minimal_values"},
     "minimal_values_duration": {"option_lengths": [2, 5], "smdp_discount": True, "mean_option_reward": False, "decision_cost": 0.1, "meta_state": "minimal_values"},
+    # run 6: each compares with sweep6_est in one setting (sweep4_visit: the goal and the sweep that fits it)
+    "sweep6_est": {**THREE_STEPS, "meta_state": "gas", "reward_mode": "cells_fixed", "survey": SWEEP6_ESTIMATE},
+    "sweep4_visit": {**THREE_STEPS, "meta_state": "gas", "reward_mode": "cells_fixed", "survey": SWEEP4_VISIT},
+    "sweep6_est_map": {**THREE_STEPS, "meta_state": "gas", "reward_mode": "map_gain", "survey": {**SWEEP6_ESTIMATE, "bonus_mode": "none"}},
+    "sweep6_est_no_time": {**THREE_STEPS, "meta_state": "gas_no_time", "reward_mode": "cells_fixed", "survey": SWEEP6_ESTIMATE},
+    "space_est": {**THREE_STEPS, "meta_state": "gas", "reward_mode": "cells_fixed", "survey": {**SWEEP6_ESTIMATE, "spacing": None}},
+    "sweep6_est_one": {**THREE_STEPS, "meta_state": "gas", "reward_mode": "cells_fixed", "survey": {**SWEEP6_ESTIMATE, "sources": [1, 1]}},
 }
 
 
@@ -75,9 +93,13 @@ def main():
     parser.add_argument("--preset", choices=PRESETS, default="untuned", help="meta agent variant (default: untuned)")
     parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: HRL_PPO[_smoke]_<preset>)")
     parser.add_argument("--resume", action="store_true", help="continue the run in ../trained-agents/<name> from its newest checkpoint")
+    parser.add_argument("--seed", type=int, help="seed for the meta agent and the episodes, to repeat a variant (default: not seeded)")
+    parser.add_argument("--max-steps", type=int, help="number of meta decisions (default: as in the run preset)")
     args = parser.parse_args()
     config = SMOKE_CONFIG if args.smoke else RUN_CONFIG
     variant = PRESETS[args.preset]
+    env_settings = {key: value for key, value in variant.items() if key != "survey"}  # of HierarchicalEnv
+    survey = variant.get("survey", {})
 
     NAME = args.name or f"{config['name']}_{args.preset}"
     saving_location = f"../trained-agents/{NAME}"
@@ -94,7 +116,7 @@ def main():
     NUM_ENVS = config["num_envs"]
 
     GP = True
-    MULTIPLE_GAUSSIANS = [1, 1]
+    MULTIPLE_GAUSSIANS = survey.get("sources", [1, 1])
     ACCURACY_GOALS = [0.9, 0.9, 0.9]
     MAX_OPT_LENGTH = 3
     GAMMA = 0.998  # per primitive step: discounts the rewards inside an option; the meta agent gets GAMMA**MAX_OPT_LENGTH per decision (GAMMA**steps with smdp_discount)
@@ -163,8 +185,13 @@ def main():
     HRL_sub_policy_data = build_subpolicy_metadata(sub_policies)
 
     # ----- Env factory -----
-    def make_env():
+    # a resumed run gets new episodes: seeding again would repeat the ones it started with
+    env_seed = None if args.resume else args.seed
+
+    def make_env(rank=0):
         def _init():
+            if env_seed is not None:
+                np.random.seed(env_seed + rank)  # the env draws its plumes and start positions from np.random
             base_env = gym.make("HUGIN-v0")
             base_env = base_env.unwrapped  # REMOVE default TimeLimit wrapper
 
@@ -180,7 +207,10 @@ def main():
 
             # Load sub-policies as Options
             options = []
-            for sp in sub_policies:
+            for index, sp in enumerate(sub_policies):
+                if index == 0 and survey.get("spacing") is not None:
+                    options.append(None)  # the sweep replaces the space agent below
+                    continue
                 model_path = os.path.join(sp["dir"], sp["model_file"])
                 policy = PPO.load(model_path)
 
@@ -200,7 +230,12 @@ def main():
                     gp_visualise=False,
                     HRL=True,
                     SUB_AGENT_TRAIN_ON_GP=False,  # HRL-level training only
+                    goal_mode=survey.get("goal_mode", "visit"),
+                    goal_mean_std=survey.get("goal_mean_std", 0.1),
+                    known_std=survey.get("known_std", 0.1),
+                    bonus_mode=survey.get("bonus_mode", "coverage"),
                 )
+                options = survey_options(options, base_env, gp_env, survey.get("spacing"), survey.get("handover", False))
             else:
                 gp_env = base_env
 
@@ -213,7 +248,7 @@ def main():
                 ACCURACY_GOALS=ACCURACY_GOALS,
                 GP=GP,
                 max_primitive_steps=SURVEY_STEPS,
-                **variant,
+                **env_settings,
             )
 
             # Control episode length
@@ -234,7 +269,7 @@ def main():
     temp_env.close()
 
     # ----- Vectorized env -----
-    env_fns = [make_env() for _ in range(NUM_ENVS)]
+    env_fns = [make_env(rank) for rank in range(NUM_ENVS)]
     env = VecMonitor(SubprocVecEnv(env_fns))  # episode reward and length in TensorBoard (rollout/ep_rew_mean, ep_len_mean)
 
     # ----- PPO meta-controller -----
@@ -273,11 +308,12 @@ def main():
             verbose=0,
             policy_kwargs=policy_kwargs,
             tensorboard_log=f"{saving_location}/tensorboard",  # live curves: tensorboard --logdir ../trained-agents
+            seed=args.seed,
             **buffer_kwargs,
         )
 
     # ----- Training setup & callbacks -----
-    max_steps = config["max_steps"]
+    max_steps = args.max_steps or config["max_steps"]
     checkpoint_steps = config["checkpoint_steps"] // NUM_ENVS  # in steps per env
 
     stats_callback = EpisodeStatsCallback(
@@ -296,7 +332,10 @@ def main():
         save_replay_buffer=False,  # PPO has no replay buffer
     )
 
-    action_names = HierarchicalEnv.action_names([sp["short_name"] for sp in sub_policies], variant["option_lengths"])
+    option_names = [sp["short_name"] for sp in sub_policies]
+    if survey.get("spacing") is not None:
+        option_names[0] = "sweep"
+    action_names = HierarchicalEnv.action_names(option_names, variant["option_lengths"])
     callbacks = [stats_callback, checkpoint_callback, OptionUsageCallback(action_names)]
     if variant["smdp_discount"]:
         callbacks.append(SMDPDiscountCallback())
@@ -321,7 +360,7 @@ def main():
             MAX_OPT_LENGTH=MAX_OPT_LENGTH,
             MULTIPLE_GAUSSIANS=MULTIPLE_GAUSSIANS,
             sub_policy_metadata=HRL_sub_policy_data,
-            hrl_variant={"preset": args.preset, "survey_steps": SURVEY_STEPS, **variant},
+            hrl_variant={"preset": args.preset, "survey_steps": SURVEY_STEPS, "seed": args.seed, **variant},
         )
 
     # ----- Train meta-controller -----
