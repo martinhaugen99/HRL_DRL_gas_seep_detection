@@ -327,6 +327,63 @@ def test_summary_has_a_section_per_scenario_and_the_check_of_the_episodes() -> N
     assert "sources_1_3 yes" in text
 
 
+def test_summary_starts_with_the_main_comparison() -> None:
+    # Arrange: the files of the other scenarios sort first
+    results = [
+        result("rule", "scripted", None, [episode()], scenario="large_plumes"),
+        result("rule", "scripted", None, [episode()]),
+    ]
+
+    # Act
+    text = summarise.summary(results)
+
+    # Assert
+    assert text.index("## sources_1_3") < text.index("## large_plumes")
+
+
+def test_mean_over_seeds_averages_the_steps_of_each_episode() -> None:
+    # Arrange
+    group = [
+        result("sweep6_est", "sampled", seed, [episode(steps=steps, plumes=2, found=2)])
+        for seed, steps in ((1, 100), (2, 110))
+    ]
+
+    # Act
+    rows = summarise.mean_over_seeds(group)
+
+    # Assert
+    assert rows == [{"steps": 105.0, "plumes": 2}]
+
+
+def test_contrast_table_gives_the_difference_in_total_and_per_number_of_plumes() -> (
+    None
+):
+    # Arrange
+    ours = [episode(steps=90), episode(steps=180, plumes=2, found=2)]
+    rule = [episode(steps=100), episode(steps=200, plumes=2, found=2)]
+    results = [
+        result("sweep6_est", "sampled", 1, ours),
+        result("rule_sweep6_handover_estimate", "scripted", None, rule),
+    ]
+
+    # Act
+    text = summarise.contrast_table(results)
+
+    # Assert
+    assert "`sweep6_est`, sampled | `rule_sweep6_handover_estimate`, scripted" in text
+    assert "-10.0 (-10.0 to -10.0)" in text  # one plume
+    assert "-20.0 (-20.0 to -20.0)" in text  # two plumes
+    assert text.rstrip().endswith("| - |")  # no episode with three plumes
+
+
+def test_contrast_table_leaves_out_surveys_without_results() -> None:
+    # Act
+    text = summarise.contrast_table([result("rule", "scripted", None, [episode()])])
+
+    # Assert
+    assert "sweep6_est" not in text
+
+
 def test_values_is_a_float_array() -> None:
     # Act
     steps = summarise.values([episode(steps=3)], "steps")

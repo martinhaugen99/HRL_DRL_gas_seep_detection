@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from HUGIN_gym.evaluation.run_evaluations import parse_name
+from HUGIN_gym.evaluation.run_evaluations import SCENARIOS, parse_name
 
 GOAL_ENDED = (
     0.99  # a survey must end by the goal in at least this share of the episodes
@@ -41,6 +41,24 @@ REFERENCES = {
     "space_est": ("lawnmower_sweep3_estimate", "rule_space_handover_estimate"),
     "sweep4_visit": ("lawnmower_sweep2_visit", "rule_sweep4_handover_visit"),
 }
+
+# Comparisons the questions of run 6 need beyond the test: (survey, actions) against (survey, actions)
+CONTRASTS = (
+    (("sweep6_est", "sampled"), ("rule_sweep6_handover_estimate", "scripted")),
+    (("sweep6_est", "sampled"), ("rule_sweep6_scripted_gas_estimate", "scripted")),
+    (("sweep6_est", "sampled"), ("lawnmower_sweep3_estimate", "scripted")),
+    (("sweep6_est", "sampled"), ("sweep6_est_control", "sampled")),
+    (("sweep6_est", "deterministic"), ("sweep6_est_control", "deterministic")),
+    (("sweep6_est", "sampled"), ("sweep6_est_map", "sampled")),
+    (("sweep6_est", "sampled"), ("sweep6_est_no_time", "sampled")),
+    (("sweep6_est", "sampled"), ("sweep6_est_one", "sampled")),
+    (("sweep6_est", "deterministic"), ("sweep6_est", "sampled")),
+    (("sweep6_est_control", "deterministic"), ("sweep6_est_control", "sampled")),
+    (
+        ("rule_sweep6_handover_estimate", "scripted"),
+        ("rule_sweep6_plume_border_estimate", "scripted"),
+    ),
+)
 
 METRICS = (
     ("ended", "Ended by goal (%)", 1),
@@ -302,6 +320,52 @@ def comparison_table(results: list[Result]) -> str:
     )
 
 
+def mean_over_seeds(group: list[Result]) -> list[dict]:
+    """One row per episode, with the steps averaged over the training seeds. All seeds get the same episodes."""
+    return [
+        {
+            "steps": float(
+                np.mean([result.episodes[index]["steps"] for result in group])
+            ),
+            "plumes": group[0].episodes[index]["plumes"],
+        }
+        for index in range(len(group[0].episodes))
+    ]
+
+
+def contrast_table(results: list[Result]) -> str:
+    """Paired differences in AUV steps, in total and per number of true plumes.
+
+    Each side is the mean over its training seeds. The interval covers the choice of episodes, not of seeds.
+    """
+    groups = group_results(results)
+    rows = []
+    for first, second in CONTRASTS:
+        if first not in groups or second not in groups:
+            continue
+        ours, other = mean_over_seeds(groups[first]), mean_over_seeds(groups[second])
+        cells = []
+        for n_plumes in (None, 1, 2, 3):
+            keep = [
+                index
+                for index, episode in enumerate(ours)
+                if n_plumes is None or episode["plumes"] == n_plumes
+            ]
+            if not keep:
+                cells.append("-")
+                continue
+            mean, low, high = paired_steps(
+                [ours[index] for index in keep], [other[index] for index in keep]
+            )
+            cells.append(f"{mean:+.1f} ({low:+.1f} to {high:+.1f})")
+        rows.append(
+            [f"`{first[0]}`, {first[1]}", f"`{second[0]}`, {second[1]}", *cells]
+        )
+    return table(
+        ["Survey", "Against", "All episodes", "1 plume", "2 plumes", "3 plumes"], rows
+    )
+
+
 def choices_table(results: list[Result]) -> str:
     """How the choices divide the survey between searching and mapping gas, overall and per third of the survey."""
     rows = []
@@ -382,8 +446,10 @@ def summary(results: list[Result]) -> str:
             f"{scenario} {'yes' if same else 'NO'}" for scenario, same in checks.items()
         )
     )
-    for scenario in dict.fromkeys(result.scenario for result in results):
+    for scenario in SCENARIOS:  # the main comparison first
         group = [result for result in results if result.scenario == scenario]
+        if not group:
+            continue
         first = group[0].settings
         sections += [
             f"## {scenario}: sources {first['sources']}, plume width {first['sigma_range']}",
@@ -393,6 +459,8 @@ def summary(results: list[Result]) -> str:
             steps_by_plumes_table(group),
             "### Each seed against the lawnmower and the rule",
             comparison_table(group),
+            "### Paired differences in AUV steps, each side the mean over its seeds",
+            contrast_table(group),
             "### Choices of the meta agent",
             choices_table(group),
         ]
