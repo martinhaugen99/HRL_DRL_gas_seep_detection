@@ -1,4 +1,6 @@
 import argparse
+import hashlib
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,7 +51,7 @@ from tqdm import tqdm
 # =========================================================
 
 def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MULTIPLE_GAUSSIANS=None, MAX_OPT_LENGTH =None,ACCURACY_GOALS=None,
-                  SURVEY_STEPS=None, VARIANT=None, SPACING=None, GOAL="visit", GOAL_MEAN_STD=0.1, KNOWN_STD=0.1, UNKNOWN_STD=0.8, MAX_UNKNOWN_CELLS=10, SCRIPTED_GAS=False, HANDOVER=False, BONUS_MODE="coverage"):
+                  SURVEY_STEPS=None, VARIANT=None, SPACING=None, GOAL="visit", GOAL_MEAN_STD=0.1, KNOWN_STD=0.1, UNKNOWN_STD=0.8, MAX_UNKNOWN_CELLS=10, SCRIPTED_GAS=False, HANDOVER=False, BONUS_MODE="coverage", SIGMA_RANGE=None):
     """
     SURVEY_STEPS: survey budget in AUV steps, which ends the episode (None: no budget)
     VARIANT: the meta agent variant, i.e. the HierarchicalEnv settings of a preset in train_HRL(ppo).py (None: one option length, MAX_OPT_LENGTH)
@@ -57,6 +59,7 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
     SCRIPTED_GAS: replace the plume and border sub-agents with GasFillOption, as a benchmark for them
     HANDOVER: give the plume and border sub-agents a scripted way to their target (HandoverOption)
     GOAL, GOAL_MEAN_STD, KNOWN_STD, UNKNOWN_STD, MAX_UNKNOWN_CELLS, BONUS_MODE: the meta agent's end goal and bonus, see the same settings in lower case of GPWrapper
+    SIGMA_RANGE: smallest and largest plume width, in cells (None: the range of the HRL training, [2.0, 5.0])
     """
 
     base_env = gym.make(
@@ -72,7 +75,9 @@ def make_test_env(GP=True, VIS_GP=True, VISUALISE = True,kernel_config=None, MUL
     base_env.HRL = True # if False we can get the base rewards and overwrite them, but still get the 40/-4 filtering
     base_env.multiple_gaussians = [1,1] if MULTIPLE_GAUSSIANS is None else MULTIPLE_GAUSSIANS # default = [1,1] , it defines the range, e.g. [1,5] would cause from 1 up to 5 gaussian sources within the volume at the same time
     base_env.spawn_at_survey_start = True  # start in a corner like a survey, as in the HRL training
-    base_env.vary_plume_size = True  # sigma from [2.0, 5.0], as in the HRL training
+    base_env.vary_plume_size = True  # sigma from [2.0, 5.0], as in the HRL training, unless SIGMA_RANGE says otherwise
+    if SIGMA_RANGE is not None:
+        base_env.gaussian_sigma_range = list(SIGMA_RANGE)
 
      # ---- GP WRAPPER HERE ----
     if GP:
@@ -165,7 +170,7 @@ class Survey:
 
 def make_survey(model_path: Path, visualise: bool = False, baseline: str | None = None, spacing: int | None = None, sources: list[int] | None = None,
                 goal: str | None = None, goal_mean_std: float | None = None, known_std: float | None = None, unknown_std: float = 0.8, max_unknown_cells: int = 10,
-                scripted_gas: bool = False, handover: bool = False) -> Survey:
+                scripted_gas: bool = False, handover: bool = False, sigma_range: list[float] | None = None) -> Survey:
     """
     Build the env and the meta agent of an evaluation.
     model_path: the meta agent model; training_config.json is read from the same folder (not used with a baseline)
@@ -176,6 +181,7 @@ def make_survey(model_path: Path, visualise: bool = False, baseline: str | None 
     handover: give the plume and border sub-agents a scripted way to their target
     sources: the smallest and largest number of gas sources per episode (None: as in the model's training)
     goal, goal_mean_std, known_std, unknown_std, max_unknown_cells: the meta agent's end goal, see GPWrapper (goal is its goal_mode)
+    sigma_range: smallest and largest plume width, in cells (None: as in the HRL training)
     A setting left out comes from the survey the model trained in, so a model is evaluated with its own options and goal.
     """
     VISUALISE = visualise
@@ -198,7 +204,7 @@ def make_survey(model_path: Path, visualise: bool = False, baseline: str | None 
     bonus_mode = trained_survey.get("bonus_mode", "coverage")
     env, gp_vis = make_test_env(GP=GP, VIS_GP=VIS_GP, VISUALISE=VISUALISE,kernel_config=kernel_config,MULTIPLE_GAUSSIANS = MULTIPLE_GAUSSIANS,MAX_OPT_LENGTH=MAX_OPT_LENGTH,ACCURACY_GOALS=ACCURACY_GOALS,
                                 SURVEY_STEPS=SURVEY_STEPS,VARIANT=VARIANT,SPACING=spacing,GOAL=goal,GOAL_MEAN_STD=goal_mean_std,KNOWN_STD=known_std,
-                                UNKNOWN_STD=unknown_std,MAX_UNKNOWN_CELLS=max_unknown_cells,SCRIPTED_GAS=scripted_gas,HANDOVER=handover,BONUS_MODE=bonus_mode) # add here a kernel_config from the config file !
+                                UNKNOWN_STD=unknown_std,MAX_UNKNOWN_CELLS=max_unknown_cells,SCRIPTED_GAS=scripted_gas,HANDOVER=handover,BONUS_MODE=bonus_mode,SIGMA_RANGE=sigma_range) # add here a kernel_config from the config file !
 
     # Load HIGH-LEVEL model (the one you trained in train.py)
     # CNN reconstruction for downsampling. NOTE: if you did not train an agent yet, you can simply use the CNN defined
@@ -211,17 +217,19 @@ def make_survey(model_path: Path, visualise: bool = False, baseline: str | None 
 
 def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 1000, visualise: bool = False, baseline: str | None = None,
                spacing: int | None = None, sources: list[int] | None = None, goal: str | None = None, goal_mean_std: float | None = None, known_std: float | None = None,
-               unknown_std: float = 0.8, max_unknown_cells: int = 10, scripted_gas: bool = False, handover: bool = False):
+               unknown_std: float = 0.8, max_unknown_cells: int = 10, scripted_gas: bool = False, handover: bool = False,
+               sigma_range: list[float] | None = None, results_json: Path | None = None):
     """
     Run the trained meta agent or a baseline for a number of episodes and print the mean +- std of the results.
     deterministic: the meta agent takes its most likely action (True) or samples it, as in training (False)
     visualise: slow the Meshcat view down by STEP_DELAY, with a label of the sub-agent in control and a pause after each episode
+    results_json: also save the settings and every episode to this file, see save_results
     The other settings are those of make_survey.
     """
     VISUALISE = visualise
     GP = True
     VIS_STATE_SPACE = False
-    survey = make_survey(model_path, visualise, baseline, spacing, sources, goal, goal_mean_std, known_std, unknown_std, max_unknown_cells, scripted_gas, handover)
+    survey = make_survey(model_path, visualise, baseline, spacing, sources, goal, goal_mean_std, known_std, unknown_std, max_unknown_cells, scripted_gas, handover, sigma_range)
     env, model, gp_vis, VARIANT, MULTIPLE_GAUSSIANS, MAX_EPS_LEN = survey.env, survey.model, survey.gp_vis, survey.variant, survey.sources, survey.max_eps_len
     cnn = CNN(layers = 3) # the original design was a resulting 4x4 downsampled state space
 
@@ -257,6 +265,7 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
     RMSE_c=[]
     extracted_GP_imgs: list[np.ndarray] =[]
     map_rows: list[dict[str, float]] = [] # one per episode, see survey_metrics.py
+    episode_rows: list[dict] = [] # one per episode, for results_json
     set_random_seed(SEED)
     for ep in tqdm(range(episodes), desc="episodes", disable=VISUALISE):
 
@@ -307,10 +316,19 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
             "ended_early": float(result["terminated"]),
             "steps": result["base_env_steps"],
         })
+        episode_rows.append({
+            **map_rows[-1],
+            "turns": result["episode_turns"],
+            "decisions": result["options_chosen"],
+            "reward": result["reward"],
+            "rmse": rmse,
+            "plume_key": plume_key(env.base_env.unwrapped),
+            "actions": result["actions"],
+        })
     agent = f"baseline {baseline}" if baseline else f"model {model_path}"
     used = survey.settings
     spacing, goal, goal_mean_std, known_std, unknown_std, max_unknown_cells = used["spacing"], used["goal"], used["goal_mean_std"], used["known_std"], used["unknown_std"], used["max_unknown_cells"]
-    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, {agent}, spacing {spacing}, handover {used['handover']}, scripted gas {scripted_gas}, sources {MULTIPLE_GAUSSIANS}, goal {goal}"
+    print(f"{'DETERMINISTIC' if deterministic else 'SAMPLED'} actions, {episodes} episodes, seed {SEED}, {agent}, spacing {spacing}, handover {used['handover']}, scripted gas {scripted_gas}, sources {MULTIPLE_GAUSSIANS}, plume width {env.base_env.unwrapped.gaussian_sigma_range}, goal {goal}"
           + (f" (mean GP std <= {goal_mean_std}, known cells GP std <= {known_std}, unknown areas with GP std > {unknown_std} of at most {max_unknown_cells} cells)" if goal == "estimate" else ""))
     print(f"REWARD = {np.mean(np.array(average_reward)):.2f} +- {np.std(np.array(average_reward)):.2f}")
     option_names = ["sweep" if spacing else OPTION_NAMES[0], *OPTION_NAMES[1:]]
@@ -353,7 +371,26 @@ def test_agent(model_path: Path, deterministic: bool = True, episodes: int = 100
     except:
         pass
     print_map_results(map_rows)
+    if results_json is not None:
+        settings = {**used, "agent": agent, "baseline": baseline, "deterministic": deterministic, "episodes": episodes, "seed": SEED, "scripted_gas": scripted_gas,
+                    "sources": MULTIPLE_GAUSSIANS, "sigma_range": env.base_env.unwrapped.gaussian_sigma_range}
+        save_results(results_json, settings, action_names, episode_rows)
     env.close()
+
+
+def plume_key(base_env) -> str:
+    """A short digest of the plumes of this episode. The same keys in the same order show that two evaluations got the same episodes."""
+    centers = np.round(np.asarray(base_env.gaussian_centers, dtype=float), 6)
+    widths = np.round(np.asarray(base_env.gaussian_sigma, dtype=float), 6)
+    return hashlib.md5(centers.tobytes() + widths.tobytes()).hexdigest()[:12]
+
+
+def save_results(path: Path, settings: dict, action_names: list[str], episodes: list[dict]) -> None:
+    """Save an evaluation through a temporary file, so a job that stops midway leaves no half-written results."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.tmp")
+    temporary.write_text(json.dumps({"settings": settings, "action_names": action_names, "episodes": episodes}, default=float))
+    temporary.replace(path)
 
 
 def print_map_results(rows: list[dict[str, float]]) -> None:
@@ -536,13 +573,22 @@ def make_parser() -> argparse.ArgumentParser:
         default=10,
         help="with --goal estimate: the largest connected unknown area, in cells, that still lets the episode end (default: 10)",
     )
+    parser.add_argument(
+        "--sigma-range",
+        nargs=2,
+        type=float,
+        metavar=("MIN", "MAX"),
+        help="smallest and largest plume width, in cells (default: 2 and 5, as in the HRL training)",
+    )
     parser.add_argument("--episodes", type=int, default=1000, help="number of episodes for modes 1 and 4 (default: 1000)")
     return parser
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the command line: the meta agent model and the mode (None: ask for it)."""
-    return make_parser().parse_args(argv)
+    parser = make_parser()
+    parser.add_argument("--results-json", type=Path, help="modes 1 and 4: also save the settings and every episode to this file")
+    return parser.parse_args(argv)
 
 
 def survey_settings(args: argparse.Namespace) -> dict:
@@ -550,7 +596,7 @@ def survey_settings(args: argparse.Namespace) -> dict:
     spacing = args.spacing if args.spacing is not None or args.baseline != "lawnmower" else 2
     return {"baseline": args.baseline, "spacing": spacing, "sources": args.sources, "goal": args.goal, "goal_mean_std": args.goal_mean_std,
             "known_std": args.known_std, "unknown_std": args.unknown_std, "max_unknown_cells": args.max_unknown_cells, "scripted_gas": args.scripted_gas,
-            "handover": args.handover}
+            "handover": args.handover, "sigma_range": args.sigma_range}
 
 
 if __name__ == "__main__":
@@ -563,13 +609,13 @@ if __name__ == "__main__":
     survey = survey_settings(args)
 
     if mode == "1":
-        test_agent(args.model, episodes=args.episodes, **survey)
+        test_agent(args.model, episodes=args.episodes, results_json=args.results_json, **survey)
     elif mode == "2":
         manual_control()
     elif mode == "3":
         validation(args.model)
     elif mode == "4":
-        test_agent(args.model, deterministic=False, episodes=args.episodes, **survey)
+        test_agent(args.model, deterministic=False, episodes=args.episodes, results_json=args.results_json, **survey)
     elif mode == "5":
         actions = input("Enter d for deterministic or s for sampled actions: ")
         if actions in ("d", "s"):

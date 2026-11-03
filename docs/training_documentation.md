@@ -37,6 +37,7 @@ The plots come from [training_data_visualiser.py](../HUGIN_gym/evaluation/traini
 | 3 | `compare_100M` | 4259604, 4259607, 4259610; resumed as 4272086, 4272088, 4272091 | 2026-10-04 22:31 – 2026-10-05 05:05 | `10e4023`; resumed with `bf7e7fc` | 10× the steps, 24 envs, 460-step episodes, 128 × 128 networks. 3 repeats | Finished; 8 of 9 runs resumed after a full disk quota |
 | 4 | `untuned` (HRL) | 4363368; resumed as 4367840, 4371199 | 2026-10-28 15:13 | `56ba1c7` | First training of the HRL meta agent, with the settings from the thesis code | Finished 2026-10-30 01:23; hit the 12 h limit twice and was resumed |
 | 5 | `minimal`, `minimal_values`, `duration`, `duration_mean`, `minimal_values_duration` (HRL) | 4371279, 4371280, 4371281, 4371282, 4371283 | 2026-10-29 22:58 | `152ba0a` | The meta agent chooses how many steps a sub-agent runs; smaller meta states; sub-agent value estimates | Finished 2026-10-30 14:29 – 2026-10-31 08:50, each in one job |
+| 6 | `sweep6_est`, `sweep4_visit`, `sweep6_est_map`, `sweep6_est_no_time`, `space_est`, `sweep6_est_one`, `sweep6_est_control` (HRL) | 4387793–4387813 | 2026-11-02, after 22:34 | `dc25144` | The meta agent works in a survey with a scripted sweep, a handover and a new end goal, on a random 1–3 sources. 3 seeds per variant, 5M decisions | Training finished; evaluation next |
 
 "Started" is `RUN_INFO.timestamp` in `training_config.json`. "Code" is the last commit before the run started. From run 3 on, it is the commit checked out on Fox when the job started (`git reflog --date=iso` on Fox).
 
@@ -1023,6 +1024,97 @@ Duration variants:
 - Lakshminarayanan, A. S., Sharma, S. and Ravindran, B. (2017). Dynamic action repetition for deep reinforcement learning. *AAAI Conference on Artificial Intelligence*.
 - Sharma, S., Lakshminarayanan, A. S. and Ravindran, B. (2017). Learning to repeat: fine grained action repetition for deep reinforcement learning. *International Conference on Learning Representations (ICLR)*.
 - Sutton, R. S., Precup, D. and Singh, S. (1999). Between MDPs and semi-MDPs: a framework for temporal abstraction in reinforcement learning. *Artificial Intelligence*, 112(1–2), 181–211.
+
+## Run 6: HRL survey variants (jobs 4387793–4387813)
+
+- **Goal:** can a trained meta agent beat a lawnmower and a simple rule, on every seed, when it works in a survey with a scripted sweep and a handover? [The changes document](261102_hrl-vs-lawnmower-changes_draft-v6.md) explains each change and why (changes 3–12).
+- **Submitted with:** `bash fox_train_HRL_matrix.sh 5000000`, one job per variant and seed.
+- **Code:** `dc25144`, pulled on Fox on 2026-11-02 at 22:34:53. The code changes are in the commits before it, and `dc25144` itself only adds documentation.
+- **Fox resources:** 16 CPUs, 32 GB per run, 6 h limit.
+- **Status:** training finished. All 21 jobs ended as `COMPLETED` with exit code 0, each run folder holds its final model `HRL_PPO_scratch.zip`, and no Slurm log holds a `Traceback`.
+
+### The variants
+
+All variants use 3 steps per decision, a survey budget of 480 AUV steps (160 decisions), the plume agent of run 3 and the border agent `PPO_border_4280885`. The AUV starts in a random corner, and σ is random in [2.0, 5.0]. The presets are in [train_HRL(ppo).py](<../HUGIN_gym/training/train_HRL(ppo).py>).
+
+| Variant | Search | End goal | Sources | Reward | Bonus | Meta state | What it tests |
+|---|---|---|---|---|---|---|---|
+| `sweep6_est` | Sweep 6 | Estimate | 1–3 | `cells_fixed` | Per patch | `gas` | The main test: can it beat the rule? |
+| `sweep4_visit` | Sweep 4 | Visit | 1–3 | `cells_fixed` | Per patch | `gas` | The same on the visit goal |
+| `sweep6_est_map` | Sweep 6 | Estimate | 1–3 | `map_gain` | None | `gas` | A reward for the map against a reward per cell |
+| `sweep6_est_no_time` | Sweep 6 | Estimate | 1–3 | `cells_fixed` | Per patch | `gas_no_time` | Does the agent need to know the time used? |
+| `space_est` | Learned space agent | Estimate | 1–3 | `cells_fixed` | Per patch | `gas` | How much of the survey must be scripted? |
+| `sweep6_est_one` | Sweep 6 | Estimate | 1 | `cells_fixed` | Per patch | `gas` | Does training on several plumes matter? |
+| `sweep6_est_control` | Sweep 6 | Estimate | 1–3 | `cells` | Coverage | `minimal_values` | The control: do the reward, bonus and state of `sweep6_est` help together? |
+
+All variants use the handover. The estimate goal uses a mean GP std of at most 0.26, known cells at GP std 0.1 or lower, and the check for unknown areas.
+
+### Jobs
+
+The variant of each job follows from the submission order of `fox_train_HRL_matrix.sh` and consecutive job IDs. The run folders are `../trained-agents/HRL_PPO_<variant>_seed<seed>_<job ID>`.
+
+| Variant | Seed 1: job, elapsed | Seed 2: job, elapsed | Seed 3: job, elapsed |
+|---|---|---|---|
+| `sweep6_est` | 4387793, 02:15:32 | 4387794, 02:00:08 | 4387795, 02:12:33 |
+| `sweep4_visit` | 4387796, 02:10:24 | 4387797, 01:50:51 | 4387798, 01:54:44 |
+| `sweep6_est_map` | 4387799, 01:53:54 | 4387800, 02:17:49 | 4387801, 01:30:37 |
+| `sweep6_est_no_time` | 4387802, 01:57:13 | 4387803, 01:58:10 | 4387804, 01:54:42 |
+| `space_est` | 4387805, 02:02:56 | 4387806, 02:10:03 | 4387807, 02:10:02 |
+| `sweep6_est_one` | 4387808, 01:50:18 | 4387809, 01:33:14 | 4387810, 01:55:18 |
+| `sweep6_est_control` | 4387811, 01:55:42 | 4387812, 01:54:37 | 4387813, 01:49:21 |
+
+5M decisions in 1.5–2.3 h is about 600–920 decisions per second, compared with 103–125 in run 4 with the old GP. The two are on different survey setups, and the elapsed time includes the start of the job. Before the runs we expected about 2.4 h per run.
+
+### Evaluation
+
+[run_evaluations.py](../HUGIN_gym/evaluation/run_evaluations.py) runs 118 evaluations with [test_HRL(ppo).py](<../HUGIN_gym/evaluation/test_HRL(ppo).py>). Each one saves its settings and every episode to a `.json` file. Seed 0 gives every survey in a scenario the same episodes, and [summarise_evaluations.py](../HUGIN_gym/evaluation/summarise_evaluations.py) checks this with a digest of the plumes of each episode.
+
+| Scenario | Sources | σ | Episodes | Trained agents | Baselines |
+|---|---|---|---|---|---|
+| `sources_1_3`, the main comparison | 1–3 | 2–5 | 1,000 | All 7 variants, 3 seeds, sampled and deterministic; `untuned` and `minimal_values` | All 15 |
+| `one_source` | 1 | 2–5 | 1,000 | `sweep6_est` and `sweep6_est_one`, 3 seeds, sampled and deterministic; `untuned` and `minimal_values` | 5 |
+| `small_plumes` | 1–3 | 1–2 | 500 | `sweep6_est` and `sweep6_est_map`, 3 seeds, sampled and deterministic; `minimal_values` | 4 |
+| `large_plumes` | 1–3 | 5–8 | 500 | As `small_plumes` | 4 |
+
+- **Every evaluation states its sources.** Otherwise a model is tested on the sources it trained on, and `sweep6_est_one` would get easier episodes than the others.
+- **The test, as written before the results:** a variant beats a reference on a seed when the 95 % bootstrap interval of its paired difference in AUV steps is below zero, at least 99 % of its surveys end by the goal, its plume and border overlap are at least as high, and it finds at least as many plumes. Maps are compared at the three decimals they are reported with. `summary.md` lists this for each seed against the lawnmower and the rule.
+- **The choices of the meta agent:** `summary.md` gives the share of each option overall and per third of the survey, and the switches per 100 decisions. The figure `choices` shows the shares over the survey per number of plumes.
+
+**Run it on Fox,** from the repository root, after pulling the code:
+
+```bash
+sbatch fox_eval_HRL.sh     # evaluations, training plots and training_summary.md; about 1-2 h on 16 CPUs, estimated from a PC
+squeue --me
+ls ../eval-results/run6/*.json | wc -l     # expect 118 when it has finished
+grep -c FAILED slurm-hugin-eval-<job ID>.out     # expect 0
+```
+
+An evaluation with a saved result is skipped, so submit the job again if it stops.
+
+**Copy the results to the PC.** On Fox:
+
+```bash
+cd .. && tar --exclude='*checkpoint*' --exclude='episode_stats*' --exclude='training_stats.pkl' --exclude='training_stats.svg' \
+    -czf run6_results.tar.gz eval-results/run6 trained-agents/HRL_PPO_*_seed?_4387[78]*
+```
+
+On the PC, from the repository root:
+
+```bash
+scp ec-<username>@fox.educloud.no:/fp/projects01/ec12/<your folder>/run6_results.tar.gz ..
+tar -xzf ../run6_results.tar.gz -C ..
+```
+
+**Make the tables and figures,** from the repository root (on Windows: `.venv/Scripts/python`):
+
+```bash
+PYTHONPATH=. .venv/bin/python -m HUGIN_gym.evaluation.summarise_evaluations ../eval-results/run6 --output docs/evaluation_results/run6
+PYTHONPATH=. .venv/bin/python -m HUGIN_gym.evaluation.plot_evaluations ../eval-results/run6 --agents-dir ../trained-agents --output docs/evaluation_results/run6
+```
+
+### Results
+
+Not available yet: the evaluation has not run on the models of run 6.
 
 ## Adding a new run
 
