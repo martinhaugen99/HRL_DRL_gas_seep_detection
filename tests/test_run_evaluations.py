@@ -262,3 +262,20 @@ def test_process_env_keeps_each_process_to_one_math_thread() -> None:
     # Assert
     assert env["OMP_NUM_THREADS"] == "1"
     assert str(matrix.REPOSITORY) in env["PYTHONPATH"]
+
+
+def test_command_passes_an_evaluation_seed_only_when_one_is_asked_for(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    evaluation = matrix.Evaluation(
+        "sources_1_3", "lawnmower_sweep3_estimate", "scripted"
+    )
+
+    # Act
+    default = matrix.command(evaluation, tmp_path, tmp_path)
+    other_episodes = matrix.command(evaluation, tmp_path, tmp_path, seed=1)
+
+    # Assert
+    assert "--seed" not in default
+    assert other_episodes[-2:] == ["--seed", "1"]

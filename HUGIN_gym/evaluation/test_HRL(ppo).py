@@ -588,6 +588,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the command line: the meta agent model and the mode (None: ask for it)."""
     parser = make_parser()
     parser.add_argument("--results-json", type=Path, help="modes 1 and 4: also save the settings and every episode to this file")
+    parser.add_argument("--seed", type=int, default=SEED, help=f"seed of the evaluation: one seed gives all surveys the same episodes (default: {SEED})")
     return parser.parse_args(argv)
 
 
@@ -601,6 +602,7 @@ def survey_settings(args: argparse.Namespace) -> dict:
 
 if __name__ == "__main__":
     args = parse_args()
+    SEED = args.seed
     # Choose whether to run trained agent or manual control
     mode = args.mode or ("1" if args.baseline else input(
         "Enter mode (1 for trained agent, 2 manual control, 3 for validation mode, 4 for trained agent with sampled actions "

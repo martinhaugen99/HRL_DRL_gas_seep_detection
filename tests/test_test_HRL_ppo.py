@@ -281,3 +281,15 @@ def test_parse_args_rejects_unknown_survey_settings(script: ModuleType, argv: li
     # Act and assert
     with pytest.raises(SystemExit):
         script.parse_args(argv)
+
+
+def test_parse_args_keeps_evaluation_seed_0_unless_told_otherwise(
+    script: ModuleType,
+) -> None:
+    # Act
+    default = script.parse_args([])
+    other = script.parse_args(["--seed", "1"])
+
+    # Assert
+    assert default.seed == 0
+    assert other.seed == 1

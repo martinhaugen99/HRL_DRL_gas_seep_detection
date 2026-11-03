@@ -8,6 +8,7 @@ Run from the repository root, on Fox with fox_eval_HRL.sh, or on a PC:
     PYTHONPATH=. .venv/Scripts/python -m HUGIN_gym.evaluation.run_evaluations --workers 8
     ... --dry-run                      only list the evaluations
     ... --only "__rule_sweep6"         only the evaluations whose name matches this pattern
+    ... --evaluation-seed 1 --output-dir ../eval-results/run6_seed1     other episodes than seed 0, to check a result
 """
 
 import argparse
@@ -255,8 +256,10 @@ def command(
     agents_dir: Path,
     output_dir: Path,
     episodes: int | None = None,
+    seed: int | None = None,
 ) -> list[str]:
-    """The command line of one evaluation. episodes overrides the number of the scenario, for a quick check."""
+    """The command line of one evaluation. episodes overrides the number of the scenario, for a quick check, and
+    seed the evaluation seed, for a check on other episodes."""
     scenario_args, scenario_episodes = SCENARIOS[evaluation.scenario]
     mode = "4" if evaluation.actions == "sampled" else "1"
     if evaluation.run_pattern is None:
@@ -274,6 +277,7 @@ def command(
         str(output_dir / f"{evaluation.name}.json"),
         *scenario_args,
         *survey_args,
+        *([] if seed is None else ["--seed", str(seed)]),
     ]
 
 
@@ -298,6 +302,7 @@ def run_one(
     agents_dir: Path,
     output_dir: Path,
     episodes: int | None = None,
+    seed: int | None = None,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> tuple[str, str]:
     """Run one evaluation. Returns its name and "skipped", "done" or "FAILED"."""
@@ -306,7 +311,7 @@ def run_one(
         return evaluation.name, "skipped"
     with (output_dir / f"{evaluation.name}.log").open("w") as log:
         finished = run(
-            command(evaluation, agents_dir, output_dir, episodes),
+            command(evaluation, agents_dir, output_dir, episodes, seed),
             cwd=REPOSITORY,
             env=process_env(),
             stdout=log,
@@ -350,6 +355,11 @@ def main() -> None:
         help="episodes per evaluation instead of the matrix's, for a quick check",
     )
     parser.add_argument(
+        "--evaluation-seed",
+        type=int,
+        help="evaluate on the episodes of this seed instead of seed 0; use another --output-dir",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="only list the evaluations"
     )
     args = parser.parse_args()
@@ -378,7 +388,10 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         jobs = pool.map(
-            lambda e: run_one(e, agents_dir, output_dir, args.episodes), evaluations
+            lambda e: run_one(
+                e, agents_dir, output_dir, args.episodes, args.evaluation_seed
+            ),
+            evaluations,
         )
         statuses = {}
         for count, (name, status) in enumerate(jobs, start=1):
