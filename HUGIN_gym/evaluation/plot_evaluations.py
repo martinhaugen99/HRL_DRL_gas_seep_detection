@@ -57,10 +57,14 @@ LEARNING_VARIANTS = {
     "sweep6_est_map": "Reward for map gain",
     "sweep6_est_control": "Control: reward, bonus and state of run 5",
 }
+# Label, position along the axis, alignment and side of the line. The curves stay above the rule at the
+# start and below the lawnmower at the end, so the labels sit there.
 LEARNING_REFERENCES = {
-    "rule_sweep6_handover_estimate": "Rule",
-    "lawnmower_sweep3_estimate": "Lawnmower, sweep 3",
+    "rule_sweep6_handover_estimate": ("Rule, sweep 6", 0.02, "left", "top"),
+    "lawnmower_sweep3_estimate": ("Lawnmower, sweep 3", 0.98, "right", "bottom"),
 }
+# The plateaus decide the comparison, so the panel leaves out the start of training, at 480 steps.
+STEPS_AXIS_LIMITS = (205.0, 340.0)
 SURVEY_ROWS = {
     "lawnmower_sweep3_estimate": "Lawnmower, sweep 3",
     "sweep6_est_control": "Control, sweep 6",
@@ -72,6 +76,8 @@ SURVEY_ROWS = {
     "rule_sweep6_handover_estimate": "Rule, sweep 6, handover",
     "rule_sweep6_scripted_gas_estimate": "Rule, sweep 6, scripted gas",
 }
+# Sampled and deterministic points of one survey can be equal, so they get their own line in the row.
+ROW_OFFSETS = {"sampled": 0.17, "deterministic": -0.17, "scripted": 0.0}
 OPTION_LABELS = ("Search", "Plume", "Border")
 TIMELINE_BINS = 10
 SMOOTHING_WINDOW = 25  # PPO updates, for the learning curves
@@ -123,7 +129,12 @@ def seed_band(
 def plot_learning_curves(agents_dir: Path, results: list[Result]) -> Figure:
     """AUV steps and ended share during training, three seeds per variant, with the rule and the lawnmower."""
     fig, (steps_ax, ended_ax) = plt.subplots(
-        2, 1, figsize=(COLUMN_WIDTH, 3.4), sharex=True, constrained_layout=True
+        2,
+        1,
+        figsize=(COLUMN_WIDTH, 3.0),
+        sharex=True,
+        height_ratios=(2, 1),
+        constrained_layout=True,
     )
     for (variant, label), color in zip(
         LEARNING_VARIANTS.items(), SERIES_COLORS, strict=True
@@ -148,22 +159,22 @@ def plot_learning_curves(agents_dir: Path, results: list[Result]) -> Figure:
     for result in results:
         if result.scenario == "sources_1_3" and result.survey in LEARNING_REFERENCES:
             numbers = metrics(result.episodes)
-            label = LEARNING_REFERENCES[result.survey]
+            label, position, align, side = LEARNING_REFERENCES[result.survey]
             steps_ax.axhline(numbers["steps"], color=REFERENCE_COLOR, linewidth=0.6)
-            # on the left, where the curves are still far above the references
             steps_ax.annotate(
                 label,
-                xy=(0.02, numbers["steps"]),
+                xy=(position, numbers["steps"]),
                 xycoords=("axes fraction", "data"),
-                xytext=(0, 1.5),
+                xytext=(0, 1.5 if side == "bottom" else -1.5),
                 textcoords="offset points",
-                ha="left",
-                va="bottom",
+                ha=align,
+                va=side,
                 color=REFERENCE_COLOR,
                 fontsize=6,
             )
+    steps_ax.set_ylim(*STEPS_AXIS_LIMITS)
     steps_ax.set_ylabel("AUV steps per survey")
-    ended_ax.set_ylabel("Ended by the goal (%)")
+    ended_ax.set_ylabel("Ended (%)")
     ended_ax.set_xlabel("Decisions of training (millions)")
     handles, labels = steps_ax.get_legend_handles_labels()
     fig.legend(handles, labels, frameon=False, loc="outside upper center")
@@ -173,11 +184,22 @@ def plot_learning_curves(agents_dir: Path, results: list[Result]) -> Figure:
 
 
 def plot_surveys(results: list[Result], scenario: str = "sources_1_3") -> Figure:
-    """AUV steps per survey on the same episodes: every training seed is a point, sampled and deterministic apart."""
-    rows = [
-        (survey, label)
-        for survey, label in SURVEY_ROWS.items()
+    """AUV steps per survey on the same episodes: every training seed is a point, sampled and deterministic apart.
+
+    The rows run from the fewest steps at the top, by the best evaluation of each survey.
+    """
+    best_steps = {
+        survey: min(
+            metrics(r.episodes)["steps"]
+            for r in results
+            if r.survey == survey and r.scenario == scenario
+        )
+        for survey in SURVEY_ROWS
         if any(r.survey == survey and r.scenario == scenario for r in results)
+    }
+    rows = [
+        (survey, SURVEY_ROWS[survey])
+        for survey in sorted(best_steps, key=lambda survey: best_steps[survey])
     ]
     fig, ax = plt.subplots(
         figsize=(COLUMN_WIDTH, 0.3 + 0.2 * len(rows)), constrained_layout=True
@@ -190,7 +212,7 @@ def plot_surveys(results: list[Result], scenario: str = "sources_1_3") -> Figure
     }
     for actions, (label, color) in kinds.items():
         points = [
-            (metrics(r.episodes)["steps"], positions[r.survey])
+            (metrics(r.episodes)["steps"], positions[r.survey] + ROW_OFFSETS[actions])
             for r in results
             if r.scenario == scenario and r.actions == actions and r.survey in positions
         ]
@@ -199,10 +221,10 @@ def plot_surveys(results: list[Result], scenario: str = "sources_1_3") -> Figure
             ax.scatter(
                 x,
                 y,
-                s=16,
+                s=12,
                 color=color,
                 edgecolors="white",
-                linewidths=0.5,
+                linewidths=0.4,
                 label=label,
                 zorder=3,
             )

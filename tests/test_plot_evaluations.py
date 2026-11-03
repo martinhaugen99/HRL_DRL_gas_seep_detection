@@ -142,6 +142,30 @@ def test_plot_surveys_saves_a_figure_with_a_row_per_survey(tmp_path: Path) -> No
     assert_saved(fig, tmp_path, "surveys")
 
 
+def test_plot_surveys_puts_the_fewest_steps_on_top_and_keeps_equal_points_apart() -> (
+    None
+):
+    # Arrange: the sampled and deterministic points of one survey have equal steps
+    results = [
+        result("lawnmower_sweep3_estimate", "scripted", None, 282),
+        result("sweep6_est", "sampled", 1, 225),
+        result("sweep6_est", "deterministic", 1, 225),
+    ]
+
+    # Act
+    fig = plots.plot_surveys(results)
+
+    # Assert
+    ax = fig.axes[0]
+    labels = {tick.get_text(): tick.get_position()[1] for tick in ax.get_yticklabels()}
+    assert labels["Meta agent, repaired reward"] > labels["Lawnmower, sweep 3"]
+    points = [
+        tuple(point) for points in ax.collections for point in points.get_offsets()
+    ]
+    assert len(set(points)) == len(results)
+    plots.plt.close(fig)
+
+
 def test_plot_choices_saves_a_figure_with_a_panel_per_number_of_plumes(
     tmp_path: Path,
 ) -> None:
