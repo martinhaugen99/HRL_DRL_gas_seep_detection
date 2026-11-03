@@ -37,7 +37,7 @@ The plots come from [training_data_visualiser.py](../HUGIN_gym/evaluation/traini
 | 3 | `compare_100M` | 4259604, 4259607, 4259610; resumed as 4272086, 4272088, 4272091 | 2026-10-04 22:31 – 2026-10-05 05:05 | `10e4023`; resumed with `bf7e7fc` | 10× the steps, 24 envs, 460-step episodes, 128 × 128 networks. 3 repeats | Finished; 8 of 9 runs resumed after a full disk quota |
 | 4 | `untuned` (HRL) | 4363368; resumed as 4367840, 4371199 | 2026-10-28 15:13 | `56ba1c7` | First training of the HRL meta agent, with the settings from the thesis code | Finished 2026-10-30 01:23; hit the 12 h limit twice and was resumed |
 | 5 | `minimal`, `minimal_values`, `duration`, `duration_mean`, `minimal_values_duration` (HRL) | 4371279, 4371280, 4371281, 4371282, 4371283 | 2026-10-29 22:58 | `152ba0a` | The meta agent chooses how many steps a sub-agent runs; smaller meta states; sub-agent value estimates | Finished 2026-10-30 14:29 – 2026-10-31 08:50, each in one job |
-| 6 | `sweep6_est`, `sweep4_visit`, `sweep6_est_map`, `sweep6_est_no_time`, `space_est`, `sweep6_est_one`, `sweep6_est_control` (HRL) | 4387793–4387813 | 2026-11-02, after 22:34 | `dc25144` | The meta agent works in a survey with a scripted sweep, a handover and a new end goal, on a random 1–3 sources. 3 seeds per variant, 5M decisions | Training finished; evaluation next |
+| 6 | `sweep6_est`, `sweep4_visit`, `sweep6_est_map`, `sweep6_est_no_time`, `space_est`, `sweep6_est_one`, `sweep6_est_control` (HRL) | 4387793–4387813 | 2026-11-02 22:37–22:38 | `dc25144` | The meta agent works in a survey with a scripted sweep, a handover and a new end goal, on a random 1–3 sources. 3 seeds per variant, 5M decisions | Finished; evaluated on 2026-11-03 (see [Results](#results-5)) |
 
 "Started" is `RUN_INFO.timestamp` in `training_config.json`. "Code" is the last commit before the run started. From run 3 on, it is the commit checked out on Fox when the job started (`git reflog --date=iso` on Fox).
 
@@ -1027,11 +1027,11 @@ Duration variants:
 
 ## Run 6: HRL survey variants (jobs 4387793–4387813)
 
-- **Goal:** can a trained meta agent beat a lawnmower and a simple rule, on every seed, when it works in a survey with a scripted sweep and a handover? [The changes document](261102_hrl-vs-lawnmower-changes_draft-v6.md) explains each change and why (changes 3–12).
+- **Goal:** can a trained meta agent beat a lawnmower and a simple rule, on every seed, when it works in a survey with a scripted sweep and a handover? [The changes document](261103_hrl-vs-lawnmower-changes_draft-v7.md) explains each change and why (changes 3–12).
 - **Submitted with:** `bash fox_train_HRL_matrix.sh 5000000`, one job per variant and seed.
 - **Code:** `dc25144`, pulled on Fox on 2026-11-02 at 22:34:53. The code changes are in the commits before it, and `dc25144` itself only adds documentation.
 - **Fox resources:** 16 CPUs, 32 GB per run, 6 h limit.
-- **Status:** training finished. All 21 jobs ended as `COMPLETED` with exit code 0, each run folder holds its final model `HRL_PPO_scratch.zip`, and no Slurm log holds a `Traceback`.
+- **Status:** finished and evaluated. All 21 jobs ended as `COMPLETED` with exit code 0, each run folder holds its final model `HRL_PPO_scratch.zip`, and no Slurm log holds a `Traceback`.
 
 ### The variants
 
@@ -1051,7 +1051,7 @@ All variants use the handover. The estimate goal uses a mean GP std of at most 0
 
 ### Jobs
 
-The variant of each job follows from the submission order of `fox_train_HRL_matrix.sh` and consecutive job IDs. The run folders are `../trained-agents/HRL_PPO_<variant>_seed<seed>_<job ID>`.
+The run folders are `../trained-agents/HRL_PPO_<variant>_seed<seed>_<job ID>`.
 
 | Variant | Seed 1: job, elapsed | Seed 2: job, elapsed | Seed 3: job, elapsed |
 |---|---|---|---|
@@ -1083,7 +1083,7 @@ The variant of each job follows from the submission order of `fox_train_HRL_matr
 **Run it on Fox,** from the repository root, after pulling the code:
 
 ```bash
-sbatch fox_eval_HRL.sh     # evaluations, training plots and training_summary.md; about 1-2 h on 16 CPUs, estimated from a PC
+sbatch fox_eval_HRL.sh     # evaluations, training plots and training_summary.md; the evaluations of 2026-11-03 took about 1 h 20 min on 16 CPUs
 squeue --me
 ls ../eval-results/run6/*.json | wc -l     # expect 118 when it has finished
 grep -c FAILED slurm-hugin-eval-<job ID>.out     # expect 0
@@ -1114,7 +1114,269 @@ PYTHONPATH=. .venv/bin/python -m HUGIN_gym.evaluation.plot_evaluations ../eval-r
 
 ### Results
 
-Not available yet: the evaluation has not run on the models of run 6.
+The evaluation ran on Fox on 2026-11-03, with the first result saved at 19:26:46 and the last at 20:46:34, so about 1 h 20 min on 16 CPUs. It used commit `56da1bd`, the first commit with these scripts and the newest on the branch at that time. All 118 evaluations have results with the sources, plume widths and number of episodes of their scenario, and every survey in a scenario got the same episodes.
+
+**Full results:** [summary.md](evaluation_results/run6/summary.md) has every table per scenario, and [evaluations.csv](evaluation_results/run6/evaluations.csv) has one row per evaluation. [training_summary.md](evaluation_results/run6/training_summary.md) has the last 1,000 training episodes of each run. The results of all episodes are on the PC in `../eval-results/run6`. "±" is the std over the 3 training seeds. Turns are per survey.
+
+#### The main comparison
+
+1–3 sources, σ 2–5, estimate goal, 1,000 episodes, evaluation seed 0:
+
+| Survey | Ended by goal (%) | AUV steps | Overlap plume / border | Visited plume / border (%) | Plumes found (%) | Turns | Switches per 100 decisions |
+|---|---|---|---|---|---|---|---|
+| Lawnmower, sweep 3 | 100.0 | 281.6 | 0.994 / 0.983 | 84.6 / 84.1 | 100.0 | 25.2 | 0.0 |
+| Rule + sweep 6 + plume, border (no handover) | 89.5 | 290.6 | 0.995 / 0.984 | 92.4 / 93.1 | 99.7 | 100.3 | 23.7 |
+| Rule + sweep 6 + handover | 99.9 | 230.7 | 0.997 / 0.990 | 93.3 / 94.0 | 100.0 | 61.1 | 15.1 |
+| Rule + sweep 6 + scripted gas | 100.0 | 226.5 | 0.997 / 0.989 | 92.8 / 93.1 | 100.0 | 34.2 | 10.6 |
+| Random + sweep 6 + handover | 0.5 | 479.7 | 0.867 / 0.858 | 83.1 / 82.1 | 85.2 | 261.2 | 66.4 |
+| **`sweep6_est`, sampled** | **100.0 ± 0.0** | **225.3 ± 1.3** | **0.998 / 0.991** | **93.7 / 94.7** | **100.0 ± 0.0** | **58.1 ± 1.0** | **9.6 ± 0.3** |
+| `sweep6_est`, deterministic | 99.9 ± 0.0 | 224.9 ± 1.2 | 0.998 / 0.991 | 93.8 / 94.7 | 100.0 ± 0.0 | 57.9 ± 0.7 | 8.4 ± 0.2 |
+| `sweep6_est_no_time`, sampled | 100.0 ± 0.0 | 227.0 ± 0.7 | 0.998 / 0.991 | 93.9 / 94.9 | 100.0 ± 0.0 | 59.3 ± 0.4 | 9.7 ± 0.3 |
+| `sweep6_est_no_time`, deterministic | 99.8 ± 0.0 | 226.7 ± 0.8 | 0.997 / 0.990 | 93.7 / 94.8 | 99.9 ± 0.0 | 58.9 ± 0.4 | 8.6 ± 0.3 |
+| `sweep6_est_one`, sampled | 99.9 ± 0.0 | 227.5 ± 2.9 | 0.998 / 0.991 | 93.2 / 95.2 | 100.0 ± 0.0 | 59.7 ± 2.0 | 9.8 ± 0.7 |
+| `sweep6_est_one`, deterministic | 99.8 ± 0.0 | 227.0 ± 2.6 | 0.998 / 0.990 | 92.9 / 95.1 | 100.0 ± 0.0 | 59.4 ± 1.9 | 8.5 ± 0.5 |
+| `sweep6_est_map`, sampled | 100.0 ± 0.0 | 241.7 ± 4.7 | 0.996 / 0.983 | 92.4 / 83.6 | 100.0 ± 0.0 | 50.1 ± 1.4 | 11.3 ± 1.6 |
+| `sweep6_est_map`, deterministic | 99.0 ± 0.3 | 245.0 ± 4.7 | 0.992 / 0.977 | 92.5 / 81.9 | 99.7 ± 0.4 | 51.6 ± 2.5 | 6.3 ± 0.4 |
+| `sweep6_est_control`, sampled | 99.7 ± 0.1 | 247.6 ± 1.4 | 0.998 / 0.989 | 94.9 / 94.3 | 100.0 ± 0.0 | 72.9 ± 1.1 | 22.9 ± 0.4 |
+| `sweep6_est_control`, deterministic | 90.1 ± 2.0 | 269.1 ± 3.5 | 0.979 / 0.961 | 89.0 / 91.9 | 98.6 ± 0.2 | 101.7 ± 4.6 | 9.5 ± 0.3 |
+| Rule + learned space agent + handover | 88.1 | 338.7 | 0.995 / 0.988 | 92.0 / 94.8 | 99.6 | 91.8 | 9.9 |
+| `space_est`, sampled | 86.6 ± 0.6 | 350.1 ± 2.3 | 0.995 / 0.989 | 93.9 / 95.5 | 99.6 ± 0.2 | 94.5 ± 1.2 | 11.3 ± 0.8 |
+| `space_est`, deterministic | 78.1 ± 2.0 | 358.0 ± 3.3 | 0.975 / 0.963 | 88.1 / 94.0 | 97.1 ± 0.7 | 117.9 ± 4.5 | 3.4 ± 0.2 |
+
+A lawnmower with sweep 4, stopped at the end of its path, takes 216.3 steps with 100 % of the plumes found, but with a weaker map (0.973 / 0.941) and 74.8 % of the plume cells visited. It stops at the end of its path instead of at the estimate goal, so it is not a reference for the test. It does show that a lawnmower can use fewer steps when the map may be worse.
+
+![AUV steps per survey](evaluation_results/run6/surveys.png)
+
+Each point is one training seed, and the rows run from the fewest steps at the top.
+
+#### The test
+
+Seeds out of 3 that pass the test written down before the results, for each variant, on 1–3 sources and σ 2–5. "Sampled" and "det." are the kinds of actions.
+
+| Variant | Actions | Against the lawnmower: seed 0 / seed 1 | Against the rule: seed 0 / seed 1 | What failed |
+|---|---|---|---|---|
+| `sweep6_est` | Sampled | 3 / 1 | 3 / 0 | Seed 1: plume overlap 0.996–0.997 against 0.998 for the rule, and 1–2 plumes missed on two training seeds |
+| `sweep6_est` | Deterministic | 3 / 0 | 3 / 0 | Seed 1: plume and border overlap, and 2–3 plumes missed |
+| `sweep6_est_no_time` | Sampled | 3 / 1 | 3 / 1 | Seed 1: 2 plumes missed on two training seeds |
+| `sweep6_est_no_time` | Deterministic | 0 / 0 | 0 / 0 | Plumes missed (99.8–99.9 % found) |
+| `sweep6_est_one` | Sampled | 3 / 0 | 2 / 0 | Seed 0: no fewer steps than the rule on training seed 3. Seed 1: plumes missed |
+| `sweep6_est_one` | Deterministic | 1 / 0 | 0 / 0 | Plumes missed |
+| `sweep6_est_map` | Sampled | 2 / 0 | 0 / 0 | Border overlap, and more steps than the rule |
+| `sweep6_est_map` | Deterministic | 0 / 0 | 0 / 0 | Border overlap, and more steps than the rule |
+| `sweep6_est_control` | Sampled | 2 / 3 | 0 / 0 | More steps than the rule |
+| `sweep6_est_control` | Deterministic | 0 / 0 | 0 / 0 | 87–92 % ended, weaker map |
+| `space_est` | Sampled | 0 / not run | 0 / not run | More steps, 86–87 % ended |
+| `space_est` | Deterministic | 0 / not run | 0 / not run | More steps, 75–80 % ended |
+| `sweep4_visit` | Sampled | 2 / 3 | 2 / 3 | Seed 0: 98.8 % ended on training seed 3 |
+| `sweep4_visit` | Deterministic | 0 / 0 | 0 / 0 | Below 99 % ended, weaker map, plumes missed |
+
+Each variant is tested against its own references: `sweep4_visit` against sweep 2 and the rule with sweep 4 on the visit goal, `space_est` against sweep 3 and the rule with the learned space agent, and the others against sweep 3 and the rule with sweep 6. Evaluation seed 1 is the check described under [The check on other episodes](#the-check-on-other-episodes).
+
+#### Paired differences in AUV steps
+
+Each side is the mean over its seeds, on the same 1,000 episodes. The 95 % bootstrap interval covers the choice of episodes, not of seeds. The first and second surveys are listed in the order "first minus second", so a negative number means the first uses fewer steps. Of the 1,000 episodes, 503 have 1 true plume, 380 have 2 and 117 have 3.
+
+| First | Second | All episodes | 1 plume | 2 plumes | 3 plumes |
+|---|---|---|---|---|---|
+| `sweep6_est`, sampled | Rule + handover | -5.4 (-6.6 to -4.2) | -7.2 (-8.8 to -5.7) | -5.0 (-7.3 to -3.0) | +0.9 (-2.8 to +4.4) |
+| `sweep6_est`, sampled | Rule + scripted gas | -1.1 (-2.3 to +0.1) | -2.2 (-3.9 to -0.7) | -0.7 (-2.7 to +1.1) | +2.2 (-1.6 to +5.9) |
+| `sweep6_est`, sampled | Lawnmower, sweep 3 | -56.3 (-58.8 to -53.6) | -75.3 (-78.9 to -71.7) | -41.9 (-45.5 to -38.2) | -21.4 (-27.6 to -15.3) |
+| `sweep6_est`, sampled | Control, sampled | -22.2 (-23.7 to -20.8) | -20.8 (-23.0 to -18.8) | -24.1 (-26.4 to -21.9) | -22.1 (-26.2 to -18.0) |
+| `sweep6_est`, deterministic | Control, deterministic | -44.3 (-48.8 to -39.8) | -46.1 (-53.0 to -39.5) | -44.6 (-51.6 to -37.0) | -35.5 (-47.2 to -23.7) |
+| `sweep6_est`, sampled | `sweep6_est_map`, sampled | -16.4 (-17.9 to -14.9) | -17.0 (-19.1 to -14.9) | -15.6 (-17.8 to -13.5) | -16.2 (-21.1 to -11.3) |
+| `sweep6_est`, sampled | `sweep6_est_no_time`, sampled | -1.7 (-2.3 to -1.1) | -1.4 (-2.3 to -0.5) | -2.0 (-2.9 to -1.2) | -2.2 (-4.5 to +0.3) |
+| `sweep6_est`, sampled | `sweep6_est_one`, sampled | -2.2 (-2.9 to -1.5) | -2.3 (-3.4 to -1.2) | -2.0 (-3.1 to -1.0) | -2.4 (-4.5 to -0.0) |
+| `sweep6_est`, deterministic | `sweep6_est`, sampled | -0.5 (-1.0 to +0.2) | -0.8 (-1.6 to +0.1) | -0.6 (-1.5 to +0.3) | +1.4 (-1.2 to +3.8) |
+| Control, deterministic | Control, sampled | +21.6 (+17.2 to +26.1) | +24.4 (+18.3 to +31.2) | +19.9 (+12.6 to +27.2) | +14.8 (+3.3 to +26.5) |
+| Rule + handover | Rule + plume, border | -59.9 (-65.0 to -54.8) | -57.1 (-64.7 to -50.1) | -61.0 (-69.1 to -53.0) | -68.1 (-81.4 to -54.8) |
+
+#### AUV steps per number of plumes
+
+Mean steps and the share of plumes found:
+
+| Survey | 1 plume | 2 plumes | 3 plumes | Plumes found, 1 / 2 / 3 (%) |
+|---|---|---|---|---|
+| Lawnmower, sweep 3 | 282 | 281 | 280 | 100 / 100 / 100 |
+| Rule + sweep 6 + handover | 214 | 244 | 258 | 100 / 100 / 100 |
+| Rule + sweep 6 + scripted gas | 209 | 240 | 257 | 100 / 100 / 100 |
+| `sweep6_est`, sampled | 207 ± 1 | 239 ± 1 | 259 ± 3 | 100 / 100 / 100 |
+| `sweep6_est_one`, sampled | 209 ± 2 | 241 ± 3 | 261 ± 4 | 100 / 100 / 100 |
+| `sweep6_est_control`, sampled | 228 ± 1 | 263 ± 2 | 281 ± 4 | 100 / 100 / 99.9 |
+
+#### The choices of the meta agent
+
+Shares of all decisions, and the search share per third of each survey:
+
+| Survey | Search | Plume | Border | Search, early / middle / late third | Switches per 100 decisions |
+|---|---|---|---|---|---|
+| Rule + sweep 6 + handover | 0.67 | 0.10 | 0.23 | 0.62 / 0.57 / 0.82 | 15.1 |
+| `sweep6_est`, sampled | 0.69 | 0.09 | 0.22 | 0.64 / 0.62 / 0.82 | 9.6 ± 0.3 |
+| `sweep6_est`, deterministic | 0.69 | 0.09 | 0.22 | 0.64 / 0.62 / 0.82 | 8.4 ± 0.2 |
+| `sweep6_est_one`, sampled | 0.69 | 0.07 | 0.24 | 0.64 / 0.61 / 0.81 | 9.8 ± 0.7 |
+| `sweep6_est_map`, sampled | 0.72 | 0.21 | 0.07 | 0.93 / 0.71 / 0.53 | 11.3 ± 1.6 |
+| `sweep6_est_control`, sampled | 0.65 | 0.13 | 0.22 | 0.61 / 0.55 / 0.81 | 22.9 ± 0.4 |
+| `untuned` (run 4), sampled | 0.61 | 0.19 | 0.20 | 0.36 / 0.60 / 0.88 | 29.9 |
+| `minimal_values` (run 5), sampled | 0.74 | 0.13 | 0.13 | 0.45 / 0.77 / 0.99 | 16.4 |
+| Random | 0.33 | 0.34 | 0.33 | 0.33 / 0.33 / 0.33 | 66.4 |
+
+![The share of each option over the survey](evaluation_results/run6/choices.png)
+
+#### The visit goal, and the state of the project before run 6
+
+1–3 sources, σ 2–5, visit goal, 1,000 episodes, evaluation seed 0:
+
+| Survey | Ended by goal (%) | AUV steps | Overlap plume / border | Plumes found (%) | Turns |
+|---|---|---|---|---|---|
+| Lawnmower, sweep 2 | 100.0 | 370.1 | 0.997 / 0.992 | 99.9 | 34.8 |
+| `untuned` (run 4), sampled | 74.7 | 405.3 | 0.994 / 0.985 | 99.3 | 147.0 |
+| `minimal_values` (run 5), sampled | 84.6 | 374.0 | 0.991 / 0.982 | 98.8 | 113.5 |
+| Rule + all three trained agents | 74.9 | 377.4 | 0.985 / 0.971 | 98.5 | 139.1 |
+| Random + all three trained agents | 12.6 | 474.2 | 0.957 / 0.939 | 97.1 | 239.4 |
+| Rule + sweep 4 + plume, border (no handover) | 74.8 | 369.1 | 0.987 / 0.976 | 99.1 | 125.4 |
+| Rule + sweep 4 + handover | 99.1 | 304.1 | 0.998 / 0.994 | 100.0 | 78.8 |
+| Rule + sweep 4 + scripted gas | 99.9 | 277.3 | 0.998 / 0.992 | 100.0 | 41.2 |
+| **`sweep4_visit`, sampled** | **99.0 ± 0.2** | **296.1 ± 1.0** | **0.999 / 0.994** | **100.0 ± 0.0** | **72.9 ± 0.7** |
+| `sweep4_visit`, deterministic | 98.3 ± 0.2 | 298.1 ± 0.2 | 0.994 / 0.988 | 99.7 ± 0.0 | 76.5 ± 0.2 |
+
+#### One source
+
+σ 2–5, 1,000 episodes, evaluation seed 0:
+
+| Survey | Goal | Ended by goal (%) | AUV steps | Overlap plume / border | Plumes found (%) | Turns |
+|---|---|---|---|---|---|---|
+| Lawnmower, sweep 3 | Estimate | 99.5 | 282.9 | 0.993 / 0.982 | 100.0 | 26.0 |
+| Rule + sweep 6 + handover | Estimate | 100.0 | 197.1 | 0.997 / 0.990 | 100.0 | 40.5 |
+| `sweep6_est`, sampled | Estimate | 99.9 ± 0.0 | 192.7 ± 0.7 | 0.997 / 0.990 | 100.0 ± 0.0 | 37.6 ± 0.6 |
+| `sweep6_est_one`, sampled | Estimate | 99.9 ± 0.0 | 194.1 ± 1.3 | 0.997 / 0.990 | 100.0 ± 0.0 | 38.1 ± 1.1 |
+| Lawnmower, sweep 2 | Visit | 100.0 | 366.5 | 0.996 / 0.991 | 99.8 | 34.6 |
+| `untuned` (run 4), sampled | Visit | 86.4 | 376.7 | 0.992 / 0.985 | 99.6 | 113.8 |
+| `minimal_values` (run 5), sampled | Visit | 88.9 | 344.8 | 0.995 / 0.988 | 99.8 | 87.4 |
+| Rule + all three trained agents | Visit | 85.4 | 344.5 | 0.992 / 0.979 | 99.7 | 100.4 |
+
+#### Plume sizes that the agents did not train on
+
+1–3 sources, 500 episodes, evaluation seed 0, estimate goal for all but the visit rows. No variant passes the test in these two scenarios.
+
+| σ | Survey | Ended by goal (%) | AUV steps | Overlap plume / border | Plumes found (%) | Turns |
+|---|---|---|---|---|---|---|
+| 1–2 | Lawnmower, sweep 2 (visit) | 100.0 | 369.4 | 0.882 / 0.777 | 96.7 | 34.6 |
+| 1–2 | Lawnmower, sweep 3 | 98.8 | 285.9 | 0.784 / 0.667 | 95.2 | 26.9 |
+| 1–2 | Rule + sweep 6 + handover | 99.2 | 275.7 | 0.845 / 0.741 | 92.1 | 81.5 |
+| 1–2 | Rule + sweep 6 + scripted gas | 100.0 | 248.9 | 0.829 / 0.714 | 91.0 | 53.9 |
+| 1–2 | `sweep6_est`, sampled | 97.2 ± 0.6 | 282.5 ± 1.6 | 0.834 / 0.730 | 92.5 ± 0.1 | 83.4 ± 1.5 |
+| 1–2 | `sweep6_est_map`, sampled | 97.5 ± 0.2 | 294.4 ± 4.5 | 0.824 / 0.688 | 90.5 ± 1.3 | 78.6 ± 4.3 |
+| 5–8 | Lawnmower, sweep 3 | 100.0 | 285.6 | 0.998 / 0.992 | 100.0 | 25.6 |
+| 5–8 | Rule + sweep 6 + handover | 93.8 | 338.6 | 1.000 / 0.997 | 100.0 | 105.3 |
+| 5–8 | Rule + sweep 6 + scripted gas | 99.4 | 301.1 | 0.999 / 0.998 | 100.0 | 43.2 |
+| 5–8 | `sweep6_est`, sampled | 98.1 ± 0.2 | 324.8 ± 0.4 | 0.997 / 0.994 | 99.9 ± 0.1 | 101.7 ± 0.7 |
+| 5–8 | `sweep6_est_map`, sampled | 95.0 ± 3.0 | 330.4 ± 8.2 | 0.999 / 0.997 | 100.0 ± 0.0 | 87.3 ± 8.4 |
+
+Paired against the rule, `sweep6_est` uses 6.8 more steps at σ 1–2 (+2.5 to +11.1) and 13.8 fewer at σ 5–8 (-17.7 to -10.0). At σ 5–8, sources mostly merge: of 500 episodes, 421 have 1 plume, 78 have 2 and only 1 has 3, so the 3-plume columns of that scenario in `summary.md` rest on a single episode.
+
+#### Training
+
+Mean over the seeds of `hrl/episode_steps`, for the PPO updates in each range of decisions:
+
+| Variant | To 0.25M | To 0.5M | To 1M | To 2M | To 3M | To 4M | To 5M |
+|---|---|---|---|---|---|---|---|
+| `sweep6_est` | 338.6 | 247.5 | 237.0 | 227.5 | 226.2 | 225.8 | 225.4 |
+| `sweep4_visit` | 429.2 | 334.3 | 316.7 | 311.4 | 304.1 | 297.5 | 296.7 |
+| `sweep6_est_map` | 378.0 | 272.5 | 258.1 | 252.9 | 251.0 | 248.0 | 244.1 |
+| `sweep6_est_no_time` | 334.0 | 247.4 | 238.3 | 228.5 | 227.1 | 227.4 | 227.8 |
+| `space_est` | 440.0 | 382.6 | 367.6 | 360.2 | 355.9 | 352.6 | 349.8 |
+| `sweep6_est_one` (one source) | 284.9 | 206.4 | 198.1 | 194.0 | 193.6 | 193.3 | 193.6 |
+| `sweep6_est_control` | 393.7 | 309.2 | 267.0 | 254.1 | 249.1 | 246.0 | 244.5 |
+
+Mean over the seeds of `train/explained_variance` and `train/entropy_loss`, over the last 25 updates. The entropy is the negative of the logged loss, in nats. The largest possible value with 3 options is 1.10.
+
+| Variant | Explained variance (lowest–highest seed) | Entropy of the choice |
+|---|---|---|
+| `sweep6_est` | 0.43 (0.41–0.46) | 0.070 |
+| `sweep4_visit` | 0.51 (0.50–0.52) | 0.082 |
+| `sweep6_est_map` | 0.70 (0.65–0.77) | 0.184 |
+| `sweep6_est_no_time` | 0.39 (0.37–0.42) | 0.073 |
+| `space_est` | 0.32 (0.29–0.34) | 0.197 |
+| `sweep6_est_one` | 0.45 (0.44–0.46) | 0.049 |
+| `sweep6_est_control` | 0.38 (0.37–0.41) | 0.298 |
+
+![Learning curves of three variants](evaluation_results/run6/learning_curves.png)
+
+The upper panel leaves out the start of training, where all curves begin at 480 steps. The band shows the lowest and highest seed.
+
+The plots of seed 1 of each variant are below. The plots and configs of all 21 runs are in [training_runs](training_runs/), in the folders named as in the jobs table.
+
+![HRL PPO sweep6_est seed 1](training_runs/HRL_PPO_sweep6_est_seed1_4387793/training_stats.png)
+
+![HRL PPO sweep4_visit seed 1](training_runs/HRL_PPO_sweep4_visit_seed1_4387796/training_stats.png)
+
+![HRL PPO sweep6_est_map seed 1](training_runs/HRL_PPO_sweep6_est_map_seed1_4387799/training_stats.png)
+
+![HRL PPO sweep6_est_no_time seed 1](training_runs/HRL_PPO_sweep6_est_no_time_seed1_4387802/training_stats.png)
+
+![HRL PPO space_est seed 1](training_runs/HRL_PPO_space_est_seed1_4387805/training_stats.png)
+
+![HRL PPO sweep6_est_one seed 1](training_runs/HRL_PPO_sweep6_est_one_seed1_4387808/training_stats.png)
+
+![HRL PPO sweep6_est_control seed 1](training_runs/HRL_PPO_sweep6_est_control_seed1_4387811/training_stats.png)
+
+- **Plot panels:** as in run 5. "Episode Length" counts decisions, which are 3 AUV steps each. A spike to 80 in the reward panel means two bonuses of +40 on the same decision.
+
+#### An example survey
+
+[map_comparison.png](evaluation_results/run6/map_comparison.png) shows the worst, 10th percentile, median and best of 100 surveys of `sweep6_est` seed 1, sampled, by the score in [compare_maps.py](../HUGIN_gym/evaluation/compare_maps.py). The sweep moves are blue, and the plume and border agents map the gas where the sweep found it.
+
+#### The check on other episodes
+
+The numbers above all come from evaluation seed 0, and the limits of the survey were chosen while looking at the results of that seed. The margin against the rule is also small. So we evaluated all variants except `space_est` again on evaluation seed 1, on a PC, with 1,000 other episodes (497, 394 and 109 with 1, 2 and 3 plumes, 1,612 plumes in total). This check was not part of the plan written before the results. All its tables are in [run6_seed1/summary.md](evaluation_results/run6_seed1/summary.md).
+
+```bash
+PYTHONPATH=. .venv/bin/python -m HUGIN_gym.evaluation.run_evaluations --evaluation-seed 1 --output-dir ../eval-results/run6_seed1 \
+    --only '^sources_1_3__(sweep6_est|sweep4_visit|lawnmower_sweep[23]_|rule_sweep6_(handover|scripted_gas)_estimate|rule_sweep4_handover_visit)'
+PYTHONPATH=. .venv/bin/python -m HUGIN_gym.evaluation.summarise_evaluations ../eval-results/run6_seed1 --output docs/evaluation_results/run6_seed1
+```
+
+| Survey | Evaluation seed | Ended by goal (%) | AUV steps | Overlap plume / border | Plumes found (%) | Surveys not ended, per training seed | Plumes missed, per training seed |
+|---|---|---|---|---|---|---|---|
+| Lawnmower, sweep 3 | 0 | 100.0 | 281.6 | 0.994 / 0.983 | 100.0 | 0 | 0 |
+| Lawnmower, sweep 3 | 1 | 99.6 | 283.7 | 0.993 / 0.983 | 100.0 | 4 | 0 |
+| Rule + sweep 6 + handover | 0 | 99.9 | 230.7 | 0.997 / 0.990 | 100.0 | 1 | 0 |
+| Rule + sweep 6 + handover | 1 | 100.0 | 229.4 | 0.998 / 0.989 | 100.0 | 0 | 0 |
+| Rule + sweep 6 + scripted gas | 0 | 100.0 | 226.5 | 0.997 / 0.989 | 100.0 | 0 | 0 |
+| Rule + sweep 6 + scripted gas | 1 | 100.0 | 226.4 | 0.997 / 0.990 | 100.0 | 0 | 0 |
+| `sweep6_est`, sampled | 0 | 100.0 ± 0.0 | 225.3 ± 1.3 | 0.998 / 0.991 | 100.0 ± 0.0 | 0, 0, 1 | 0, 0, 0 |
+| `sweep6_est`, sampled | 1 | 99.7 ± 0.1 | 226.1 ± 1.0 | 0.997 / 0.989 | 99.9 ± 0.1 | 3, 2, 4 | 1, 0, 2 |
+| `sweep6_est`, deterministic | 0 | 99.9 ± 0.0 | 224.9 ± 1.2 | 0.998 / 0.991 | 100.0 ± 0.0 | 1, 1, 1 | 0, 0, 0 |
+| `sweep6_est`, deterministic | 1 | 99.5 ± 0.1 | 225.8 ± 1.1 | 0.996 / 0.988 | 99.9 ± 0.0 | 5, 4, 6 | 2, 2, 3 |
+
+Paired differences of `sweep6_est`, sampled, in AUV steps, on seed 1:
+
+| Against | All episodes | 1 plume | 2 plumes | 3 plumes |
+|---|---|---|---|---|
+| Rule + handover | -3.3 (-4.7 to -1.9) | -4.6 (-6.5 to -2.5) | -2.4 (-4.7 to +0.0) | -0.9 (-5.6 to +3.6) |
+| Rule + scripted gas | -0.3 (-1.6 to +1.1) | -0.4 (-2.3 to +1.8) | -0.7 (-2.8 to +1.5) | +1.4 (-2.8 to +5.5) |
+| Lawnmower, sweep 3 | -57.6 (-60.6 to -54.6) | -77.1 (-81.2 to -73.2) | -43.3 (-47.4 to -39.4) | -20.7 (-27.0 to -14.5) |
+| Control, sampled | -19.3 (-20.8 to -17.8) | -17.1 (-19.3 to -14.8) | -21.6 (-23.9 to -19.2) | -20.9 (-25.6 to -16.6) |
+
+- **What holds:** `sweep6_est` uses fewer steps than the rule on every training seed on both sets. The differences per training seed are -7.2, -4.6 and -4.5 on seed 0, and -4.8, -2.6 and -2.6 on seed 1. Its lead over the lawnmower and the control also holds.
+- **What does not hold:** it passes the full test against the rule on seed 0 only. On seed 1, 2–4 of its surveys run out of the 480-step budget (sampled), and the plume overlap is 0.001–0.002 below the rule's. All plumes it missed were in surveys that ran out of the budget, and none in a survey that ended by the goal. We have not looked at what the agent does in those surveys.
+- **`sweep4_visit` is steadier:** sampled, it passes against both references on all training seeds on seed 1 (99.3–99.6 % ended, 295.0 ± 0.3 steps), with -7.5, -8.4 and -8.2 steps against the rule.
+
+#### Observations
+
+- **Against the lawnmower:** `sweep6_est` uses 56–58 fewer AUV steps than sweep 3 (20 %) on both sets of episodes, with a better map and more of the true gas visited (93.7 / 94.7 % against 84.6 / 84.1 %). The price is more than twice the turns (58 against 25). Turns have no cost at this level of the simulation, so the result says nothing about energy.
+- **Against the rule:** the saving is small and steady (-5.4 and -3.3 steps, 1–2 %), but the full test passes on one of the two sets of episodes. The fair summary is that it matches the rule with slightly fewer steps. It does not clearly beat it.
+- **Room left:** `sweep6_est` is level with the rule with scripted gas in steps (-1.1, from -2.3 to +0.1, and -0.3, from -1.6 to +1.1), with more turns (58 against 34). So there is little left to gain on this survey.
+- **Where the gain comes from:** before run 6, the best trained agent took 374 steps with 84.6 % ended on the visit goal, the rule with the same agents took 377 with 74.9 %, and the lawnmower took 370 with 100 %. The handover alone is worth 59.9 steps to the rule on the estimate goal, and lifts it from 89.5 % to 99.9 % ended. The rule then already saves 18 % against the lawnmower, on both goals. Learning adds 1–3 % on top of that.
+- **The fixes of changes 9–11 help together:** against the control, `sweep6_est` saves 22.2 and 19.3 steps sampled, and 44.3 and 38.8 deterministic. The control beats the lawnmower on most seeds when sampled, and never beats the rule. We cannot tell which of the three fixes helps most.
+- **Sampled against deterministic:** the gap is gone for `sweep6_est` (-0.5 and -0.2 steps, and both intervals contain 0), but stays for the control (+21.6 and +19.3 steps, 90–91 % ended). The entropy of the choice at the end of training is 0.07 against 0.30, so `sweep6_est` rarely draws anything but its most likely choice. A possible reason is that the `gas` state tells whether the last choice made progress, but we have not tested that alone. On the visit goal the gap remains: 99.0–99.4 % ended sampled, against 97.4–98.3 % deterministic.
+- **The visit goal:** `sweep4_visit`, sampled, is the clearest win over the rule, at 7–9 fewer steps with a map at least as good, on 5 of 6 evaluations of a training seed. Its curve had not flattened: 311 steps up to 2M decisions, 297 at 5M.
+- **Time input and training on several plumes:** dropping the time costs about 2 steps, and so does training on one source, on both sets of episodes. A survey with 3 plumes takes `sweep6_est_one` 261 steps against 259. So in this survey the meta agent needs neither.
+- **The reward sets the balance:** `map_gain` sweeps first and maps gas late (search share 0.93 in the first third and 0.53 in the last), visits 83.6 % of the border cells and takes 16–17 more steps. `cells_fixed` maps gas when it is found, as the rule does.
+- **The choices look like the rule's:** `sweep6_est` divides the survey about as the rule does (search share 0.69 against 0.67, and about the same per third), and switches less often (9.6 against 15.1 per 100 decisions, the control 22.9, random 66.4). We have not compared the choices decision by decision, so we cannot say how often they differ.
+- **Number of plumes:** the steps grow with the plumes (207 / 239 / 259) while the lawnmower stays flat (282 / 281 / 280). So the lead over the lawnmower shrinks from 75 steps with 1 plume to 21 with 3, and the lead over the rule is gone at 3 plumes (+0.9 and -0.9, both intervals contain 0). Only 109–117 of 1,000 episodes have 3 plumes.
+- **The learned space agent:** `space_est` takes 350 steps with 86.6 % ended, worse than the lawnmower and worse than the rule with the same agent (339 steps, 88.1 %). So the scripted sweep cannot be replaced by the current detection agent.
+- **Plume size:** no variant passes the test on sizes it did not train on. At σ 1–2, the wide tracks miss plumes (92.5 % found, against 95.2 % for sweep 3 and 96.7 % for sweep 2), and the rule uses 6.8 fewer steps. At σ 5–8, `sweep6_est` beats the rule in steps and in surveys ended (98.1 % against 93.8 %), with a slightly weaker map, but sweep 3 takes 39 fewer steps with about the same map, because most of the area is gas.
+- **Training:** `sweep6_est` passes the rule after about 1.15M decisions and changes little after 2M (227.5 to 225.4 steps), so more training would not help it. `sweep6_est_map` and the control still fall slowly (from about 253 to 244 steps). The critic of `sweep6_est` ends at an explained variance of 0.43, against 0.29 in the PC check at 1M decisions.
 
 ## Adding a new run
 
