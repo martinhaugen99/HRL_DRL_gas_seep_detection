@@ -158,7 +158,7 @@ def test_plot_surveys_puts_the_fewest_steps_on_top_and_keeps_equal_points_apart(
     # Assert
     ax = fig.axes[0]
     labels = {tick.get_text(): tick.get_position()[1] for tick in ax.get_yticklabels()}
-    assert labels["Meta agent, repaired reward"] > labels["Lawnmower, sweep 3"]
+    assert labels["Main meta-agent"] > labels["Lawnmower, sweep 3"]
     points = [
         tuple(point) for points in ax.collections for point in points.get_offsets()
     ]

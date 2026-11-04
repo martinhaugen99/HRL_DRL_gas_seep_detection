@@ -53,9 +53,9 @@ REFERENCE_COLOR = "#52514e"
 SERIES_COLORS = ("#2a78d6", "#eb6834", "#1baf7a")
 
 LEARNING_VARIANTS = {
-    "sweep6_est": "Repaired reward, patch bonus, gas state",
-    "sweep6_est_map": "Reward for map gain",
-    "sweep6_est_control": "Control: reward, bonus and state of run 5",
+    "sweep6_est": "Main meta-agent",
+    "sweep6_est_map": "Map gain",
+    "sweep6_est_control": "Control",
 }
 # Label, position along the axis, alignment and side of the line. The curves stay above the rule at the
 # start and below the lawnmower at the end, so the labels sit there.
@@ -71,14 +71,14 @@ SURVEY_ROWS = {
     "sweep6_est_map": "Meta agent, map gain",
     "sweep6_est_no_time": "Meta agent, no time input",
     "sweep6_est_one": "Meta agent, one-source training",
-    "sweep6_est": "Meta agent, repaired reward",
+    "sweep6_est": "Main meta-agent",
     "space_est": "Meta agent, learned space agent",
     "rule_sweep6_handover_estimate": "Rule, sweep 6, handover",
     "rule_sweep6_scripted_gas_estimate": "Rule, sweep 6, scripted gas",
 }
 # Sampled and deterministic points of one survey can be equal, so they get their own line in the row.
 ROW_OFFSETS = {"sampled": 0.17, "deterministic": -0.17, "scripted": 0.0}
-OPTION_LABELS = ("Search", "Plume", "Border")
+OPTION_LABELS = ("Search", "Characterization", "Delineation")
 TIMELINE_BINS = 10
 SMOOTHING_WINDOW = 25  # PPO updates, for the learning curves
 
@@ -177,7 +177,7 @@ def plot_learning_curves(agents_dir: Path, results: list[Result]) -> Figure:
     ended_ax.set_ylabel("Ended (%)")
     ended_ax.set_xlabel("Decisions of training (millions)")
     handles, labels = steps_ax.get_legend_handles_labels()
-    fig.legend(handles, labels, frameon=False, loc="outside upper center")
+    fig.legend(handles, labels, frameon=False, ncols=3, loc="outside upper center")
     for ax in (steps_ax, ended_ax):
         style_axes(ax)
     return fig
@@ -244,7 +244,7 @@ def plot_choices(
     scenario: str = "sources_1_3",
 ) -> Figure:
     """The share of each option over the survey, per number of true plumes: the trained agent against the rule."""
-    rows = {reference: "Rule", trained: "Trained, sampled"}
+    rows = {reference: "Rule", trained: "Meta-agent"}
     fig, axes = plt.subplots(
         2,
         3,
