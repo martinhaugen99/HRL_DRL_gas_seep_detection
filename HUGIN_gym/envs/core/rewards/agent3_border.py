@@ -30,17 +30,17 @@ class Reward:
         # else:
         #     reward += 0.2/distance_to_closest_unvisited_cell
 
-        if agent_turns:
-            if percentage_visited:
-                if c_around_threshold_normed==1.0:
-                    reward-=0.3 * (1-percentage_visited)
-                else:
-                    reward -= 0.3 * (1-c_around_threshold_normed)*(1-percentage_visited) # turning is bad unless it helps the progress
-            else:
-                if c_around_threshold_normed==1.0:
-                    reward-=0.3
-                else:
-                    reward -= 0.3 * (1-c_around_threshold_normed)
+        # if agent_turns:
+        #     if percentage_visited:
+        #         if c_around_threshold_normed==1.0:
+        #             reward-=0.3 * (1-percentage_visited)
+        #         else:
+        #             reward -= 0.3 * (1-c_around_threshold_normed)*(1-percentage_visited) # turning is bad unless it helps the progress
+        #     else:
+        #         if c_around_threshold_normed==1.0:
+        #             reward-=0.3
+        #         else:
+        #             reward -= 0.3 * (1-c_around_threshold_normed)
         reward += time_penalty
         # no velocity penalties as the HUGIN has to constantly move 2m/s forward
 

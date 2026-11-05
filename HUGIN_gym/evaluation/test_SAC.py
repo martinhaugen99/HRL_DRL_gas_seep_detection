@@ -63,7 +63,7 @@ class ContinuousToDiscreteActionWrapper(gym.ActionWrapper):
 
 def make_test_env(
     GP=True,
-    AGENT_TYPE="CHANGE",
+    AGENT_TYPE="PLUME",
     VIS_GP=True,
     VISUALISE=True,
     kernel_config=None,
@@ -83,6 +83,9 @@ def make_test_env(
     )
     base_env = base_env.unwrapped
     base_env.agent_type = AGENT_TYPE
+    if AGENT_TYPE == "PLUME":  # same start and plume sizes as in the PLUME training
+        base_env.spawn_near_plume = True
+        base_env.vary_plume_size = True
     base_env.train = False
     base_env.random_points = True
     base_env.multiple_gaussians = [1, 1]
@@ -126,7 +129,7 @@ def make_test_env(
 ###### test modes
 
 # Path to your SAC trained agent file (model.save(...))
-model_path_global = "../trained-agents/SAC_plume_GP_clipped_RWD_min_steps_in_plume/SAC_scratch"
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained-agents/SAC_compare_4223553/SAC_scratch.zip"
 
 
 def test_agent():
@@ -137,7 +140,9 @@ def test_agent():
     EPISODES = 1000
     SUB_AGENT_TRAIN_ON_GP = True
     AGENT_TYPE = "PLUME"   # set accordingly
-
+    STEP_DELAY = 0.2       # seconds between steps in the Meshcat view (0 = full speed)
+    PAUSE_AT_END = True    # wait for Enter before the next episode clears the view
+ 
     # Load SAC model
     try:
         model = SAC.load(model_path_global)
@@ -185,6 +190,8 @@ def test_agent():
             GP=GP,
             VISUALISE=VISUALISE,
             testing_space_agent=False,
+            step_delay=STEP_DELAY,
+            pause_at_end=PAUSE_AT_END,
         )
 
         average_border_coverage.append(result["border_coverage"])

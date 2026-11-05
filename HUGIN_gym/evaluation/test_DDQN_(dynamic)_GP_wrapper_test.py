@@ -18,7 +18,7 @@ from HUGIN_gym.envs.core.visualisation.GP_visualiser import GPVisualiser
 ##### environment creator #####
 ###############################
 
-def make_test_env(GP=True,AGENT_TYPE="CHANGE", VIS_GP=True, VISUALISE = True,kernel_config=None, HRL=False, SUB_AGENT_TRAIN_ON_GP= False):
+def make_test_env(GP=True,AGENT_TYPE="PLUME", VIS_GP=True, VISUALISE = True,kernel_config=None, HRL=False, SUB_AGENT_TRAIN_ON_GP= False):
 
     base_env = gym.make(
         "HUGIN-v0",
@@ -27,6 +27,9 @@ def make_test_env(GP=True,AGENT_TYPE="CHANGE", VIS_GP=True, VISUALISE = True,ker
     )
     base_env = base_env.unwrapped
     base_env.agent_type = AGENT_TYPE
+    if AGENT_TYPE == "PLUME": # same start and plume sizes as in the PLUME training
+        base_env.spawn_near_plume = True
+        base_env.vary_plume_size = True
     base_env.train = False
     base_env.random_points = True
     base_env.multiple_gaussians = [1,1] # testing 2 instead of 1 source at the same time
@@ -65,7 +68,7 @@ def make_test_env(GP=True,AGENT_TYPE="CHANGE", VIS_GP=True, VISUALISE = True,ker
 ###### test modes
 
 
-model_path_global = "../trained-agents/NEW_border_GP_clipped_RWD_WITH_distance_from_max_HALF_c_thresh_for_below_differentHYPER/DQN_scratch"#/space_diff_NEW_visited
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained-agents/DQN_compare_4223553/DQN_scratch.zip"#/space_diff_NEW_visited
 
 def test_agent():
     VISUALISE = True      # Meshcat / real-world simulator
@@ -74,7 +77,9 @@ def test_agent():
     VIS_GP = False             # GP visualisation
     EPISODES = 1000
     SUB_AGENT_TRAIN_ON_GP=True
-    
+    STEP_DELAY = 0.2       # seconds between steps in the Meshcat view (0 = full speed)
+    PAUSE_AT_END = True    # wait for Enter before the next episode clears the view
+   
     # Load model
     try:
         model = DQN.load(model_path_global)
@@ -108,6 +113,8 @@ def test_agent():
             GP=GP,
             VISUALISE=VISUALISE,
             testing_space_agent = False, # for getting border and plume coverrage. Otherwise c_map is off
+            step_delay=STEP_DELAY,
+            pause_at_end=PAUSE_AT_END,
         )
         
         average_border_coverage.append(result["border_coverage"])

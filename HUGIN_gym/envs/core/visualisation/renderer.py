@@ -1,7 +1,44 @@
+from functools import lru_cache
+from io import BytesIO
+
 import meshcat
 import meshcat.geometry as g
 import meshcat.transformations as tf
 import numpy as np
+from matplotlib.figure import Figure
+from matplotlib.transforms import offset_copy
+
+CAMERA_FOV = 75 # vertical field of view of the Meshcat camera, in degrees
+# colors (0xRRGGBB) of the gas cloud, per band of concentration_bands
+CLOUD_COLORS = {"plume": 0xBDFFF9, "plume and border": 0xE08CFF, "border": 0x9933FF} # white-cyan, light and dark purple
+
+
+def concentration_bands(conc, c_threshold, c_around_width):
+    """
+    Masks of the cells counted as plume only, as plume and border, and as border only. As in HUGIN.reset, plume cells
+    are at or above c_threshold and border cells within c_around_width of it, so the two overlap.
+    """
+    above = conc >= c_threshold
+    around = (conc >= c_threshold - c_around_width) & (conc <= c_threshold + c_around_width)
+    return {"plume": above & ~around, "plume and border": above & around, "border": around & ~above}
+
+
+@lru_cache
+def label_png(lines: tuple[tuple[str, int], ...]) -> tuple[bytes, int, int]:
+    """PNG image of text lines, each (text, color 0xRRGGBB), on a dark, half-transparent background, and its width and
+    height in pixels."""
+    fontsize = 14
+    fig = Figure(dpi=200)
+    fig.patch.set_facecolor((0, 0, 0, 0.55))
+    for i, (text, color) in enumerate(lines):
+        # each line 1.5 font sizes below the one before, an offset in inches from the figure, which the tight bbox moves
+        transform = offset_copy(fig.transFigure, fig=fig, y=-i * 1.5 * fontsize / 72, units="inches")
+        fig.text(0, 0.9, text, color=f"#{color:06x}", fontsize=fontsize, weight="bold", transform=transform)
+    buffer = BytesIO()
+    fig.savefig(buffer, format="png", bbox_inches="tight", pad_inches=0.08, facecolor=fig.get_facecolor())
+    png = buffer.getvalue()
+    width, height = int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big") # from the PNG header
+    return png, width, height
 
 
 class HUGINRenderer:
@@ -14,7 +51,8 @@ class HUGINRenderer:
         self.vis.open()
         self.trail_markers = []  # For trajectory markers
         self.step_counter = 0    # To track how many steps have passed
-        self.visited_voxel_names = set() 
+        self.visited_voxel_names = set()
+        self.labels = {} # the lines of the label in each corner of the view
 
     def create_wire_3d_grid(self, size, depth, step):
 
@@ -207,7 +245,8 @@ class HUGINRenderer:
             T = tf.translation_matrix([x, y, z])
             self.vis["visited_grid"][name].set_transform(T)
 
-    def step_sim(self, state):
+    def step_sim(self, state, color=0x00FF00):
+        """Move the AUV to state and add a trail marker in color (0xRRGGBB)."""
         self.state = state.copy()  # maybe wrong. check later
         if self.render_mode != "human":
             return
@@ -228,8 +267,41 @@ class HUGINRenderer:
         # Plot marker every 2 steps
         self.step_counter += 1
         #if self.step_counter % 1 == 0:
-        self.plot_marker(position=translation, orientation=(self.state["theta"]-np.pi/2), marker_id=self.step_counter)
+        self.plot_marker(position=translation, orientation=(self.state["theta"]-np.pi/2), marker_id=self.step_counter, color=color)
         #self.update_visited_grid()
+
+    def show_label(self, lines, corner="top_left", pixel_size=0.0011, min_aspect=1.5):
+        """
+        Show text lines, each (text, color 0xRRGGBB), in a corner of the view: "top_left" (e.g. the sub-agent in control)
+        or "bottom_left" (the legend of the gas cloud). pixel_size: size of a pixel of the label image in the view, where
+        the view is 2 * tan(CAMERA_FOV / 2) = 1.53 high.
+        The label is attached to the camera, so it stays in place when the view is turned or zoomed. It is fully in view
+        for browser windows at least min_aspect times as wide as high.
+        """
+        lines = tuple(lines)
+        if corner not in ("top_left", "bottom_left"):
+            raise ValueError(f"corner must be 'top_left' or 'bottom_left', not {corner!r}")
+        if self.render_mode != "human" or self.labels.get(corner) == lines:
+            return
+        self.labels[corner] = lines
+        png, width_px, height_px = label_png(lines)
+        width, height = width_px * pixel_size, height_px * pixel_size
+        half_view = np.tan(np.radians(CAMERA_FOV / 2)) # half the view height, 1 unit in front of the camera
+        margin = 0.03
+        match corner:
+            case "top_left":
+                y = half_view - margin - height / 2
+            case "bottom_left":
+                y = -half_view + margin + height / 2
+        label = self.vis[f"/Cameras/default/rotated/<object>/label_{corner}"]
+        label.set_object(
+            g.Box([width, height, 1e-4]),
+            # side=0: only the side facing the camera, the back would show the text mirrored. depthTest=False: always on top
+            g.MeshBasicMaterial(map=g.ImageTexture(image=g.PngImage(png)), transparent=True, side=0, depthTest=False),
+        )
+        label.set_transform(tf.translation_matrix(
+            [-half_view * min_aspect + margin + width / 2, y, -1.0] # the camera looks along -z
+        ))
 
     def plot_concentration_field(self, concentration_fn,
                              gaussian_center,
@@ -296,14 +368,11 @@ class HUGINRenderer:
                     )
 
     def plot_concentration_field2(self, x,y,z,concentration_field,
-                            above_low_lim_of_threshold_border,
-                            resolution=0.5):
+                            c_threshold, c_around_width):
         """
-        Visualizes only points within radius sigma of the Gaussian center.
-
-        Opacity:
-        r = sigma   -> opacity = 0.2
-        r = 0       -> opacity = 0.7
+        Draw the cells with gas as spheres, sized and shaded by concentration and colored (CLOUD_COLORS) by what the
+        coverage counts them as: plume only, plume and border, or border only (concentration_bands). A legend in the
+        bottom left corner of the view gives the colors and their concentrations.
         """
 
         # Remove old field
@@ -312,52 +381,43 @@ class HUGINRenderer:
         except KeyError:
             # Node does not exist yet, nothing to delete
             pass
-    
-        # --- Mask: only meaningful concentration ---
-        mask = concentration_field > above_low_lim_of_threshold_border
 
         # --- Broadcast grid to full shape ---
         X = x + 0*y + 0*z
         Y = y + 0*x + 0*z
         Z = z + 0*x + 0*y
 
-        # --- Extract filtered points ---
-        Xf = X[mask]
-        Yf = Y[mask]
-        Zf = Z[mask]
-        Cf = concentration_field[mask]
-
         # --- Normalize concentration ---
         c_max = concentration_field.max()
-        if c_max > 0:
-            Cn = Cf / c_max
-        else:
-            Cn = Cf  # all zeros edge case
-
-        # --- Opacity mapping ---
-        # low concentration → 0.2, high → 0.7
-        opacity = 0.2 + (0.7 - 0.2) * Cn
-
-        # --- Radius mapping (optional tuning) ---
-        radius = 0.3 * Cn  # or try sqrt/log scaling
+        Cn = concentration_field / c_max if c_max > 0 else concentration_field # all zeros edge case
 
         # --- Render ---
-        for idx, (xv, yv, zv, r, op) in enumerate(zip(Xf, Yf, Zf, radius, opacity)):
+        idx = 0
+        for band, mask in concentration_bands(concentration_field, c_threshold, c_around_width).items():
+            for xv, yv, zv, cn in zip(X[mask], Y[mask], Z[mask], Cn[mask]):
 
-            sphere = g.Sphere(float(r))
+                sphere = g.Sphere(float(0.1 + 0.2 * cn)) # radius 0.1 to 0.3, so the colors of the border cells show
 
-            material = g.MeshPhongMaterial(
-                color=0xBDFFF9,
-                opacity=float(op),
-                transparent=True
-            )
+                material = g.MeshPhongMaterial(
+                    color=CLOUD_COLORS[band],
+                    opacity=float(0.4 + (0.9 - 0.4) * cn), # low concentration → 0.4, high → 0.9
+                    transparent=True
+                )
 
-            name = f"concentration_field/point_{idx}"
+                name = f"concentration_field/point_{idx}"
+                idx += 1
 
-            self.vis[name].set_object(sphere, material)
-            self.vis[name].set_transform(
-                tf.translation_matrix([float(xv), float(yv), float(zv+1.0)]) # raise slightly above seabed = bring in same plane as visited map
-            )
+                self.vis[name].set_object(sphere, material)
+                self.vis[name].set_transform(
+                    tf.translation_matrix([float(xv), float(yv), float(zv+1.0)]) # raise slightly above seabed = bring in same plane as visited map
+                )
+
+        self.show_label([
+            ("Gas concentration", 0xFFFFFF),
+            (f"plume: above {c_threshold + c_around_width:.2f}", CLOUD_COLORS["plume"]),
+            (f"plume and border: {c_threshold:.2f} to {c_threshold + c_around_width:.2f}", CLOUD_COLORS["plume and border"]),
+            (f"border: {c_threshold - c_around_width:.2f} to {c_threshold:.2f}", CLOUD_COLORS["border"]),
+        ], corner="bottom_left")
 
     def reset(self):
         self.vis.delete()

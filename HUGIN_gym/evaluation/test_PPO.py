@@ -28,7 +28,7 @@ import time
 
 def make_test_env(
     GP=True,
-    AGENT_TYPE="CHANGE",
+    AGENT_TYPE="PLUME",
     VIS_GP=True,
     VISUALISE=True,
     kernel_config=None,
@@ -44,6 +44,9 @@ def make_test_env(
     )
     base_env = base_env.unwrapped
     base_env.agent_type = AGENT_TYPE
+    if AGENT_TYPE == "PLUME":  # same start and plume sizes as in the PLUME training
+        base_env.spawn_near_plume = True
+        base_env.vary_plume_size = True
     base_env.train = False
     base_env.random_points = True
     base_env.multiple_gaussians = [1,1]
@@ -85,15 +88,17 @@ def make_test_env(
 
 # Path to your PPO trained agent directory (where PPO_scratch is saved)
 #model_path_global = "../trained-agents/PPO_border_GP_d_to_max_only_terminate_after_plume/PPO_scratch"
-model_path_global = "../trained-agents/paper_2D_PPO_space_10M/PPO_scratch"
+model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained-agents/PPO_compare_100M_4259604/PPO_scratch.zip"
 
 def test_agent():
-    VISUALISE = False  # Meshcat / real-world simulator
+    VISUALISE = True  # Meshcat / real-world simulator
     VIS_STATE_SPACE = False
     GP = True          # GP on/off
     VIS_GP = False       # GP visualisation
     EPISODES = 100
     SUB_AGENT_TRAIN_ON_GP = True
+    STEP_DELAY = 0.2       # seconds between steps in the Meshcat view (0 = full speed)
+    PAUSE_AT_END = True    # wait for Enter before the next episode clears the view
 
     # Load PPO model
     try:
@@ -151,7 +156,9 @@ def test_agent():
             VISUALISE=VISUALISE,
             testing_space_agent=True,
             CoverageBarVisualiser=CoverageBarVisualiser,
-            verbose=False # True
+            verbose=False, # True
+            step_delay=STEP_DELAY,
+            pause_at_end=PAUSE_AT_END,
         )
 
         try:
@@ -275,7 +282,7 @@ def test_lawnmower_auto():
     # baseline: SPACE agent for coverage
     env, gp_vis = make_test_env(
         GP=GP,
-        AGENT_TYPE="SPACE",
+        AGENT_TYPE="PLUME",
         VIS_GP=VIS_GP,
         VISUALISE=VISUALISE,
         kernel_config=None,
@@ -432,7 +439,7 @@ def manual_control():
     VIS_GP = False
     EPISODES = 20
     MAX_EPS_LEN = 8000
-    AGENT_TYPE = "SPACE"
+    AGENT_TYPE = "PLUME"
     HRL = False
     SUB_AGENT_TRAIN_ON_GP = True
 

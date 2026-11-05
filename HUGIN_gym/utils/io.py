@@ -1,6 +1,10 @@
-import os
-import sys
+import datetime
 import json
+import os
+import re
+import sys
+from pathlib import Path
+
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.type_aliases import TrainFrequencyUnit
@@ -21,6 +25,28 @@ def confirm_overwrite(directory: str):
                     sys.exit(0)
                 else:
                     print("Please enter 'y' or 'n'.")
+
+def find_latest_checkpoint(run_dir: str | Path, prefix: str) -> tuple[Path, int]:
+    """Return the newest <prefix>_<steps>_steps.zip in run_dir (as written by CheckpointCallback) and its step count."""
+    pattern = re.compile(rf"{re.escape(prefix)}_(\d+)_steps\.zip")
+    checkpoints = [
+        (int(match.group(1)), path)
+        for path in Path(run_dir).glob(f"{prefix}_*_steps.zip")
+        if (match := pattern.fullmatch(path.name))
+    ]
+    if not checkpoints:
+        raise FileNotFoundError(f"No {prefix}_<steps>_steps.zip in {run_dir}")
+    step, path = max(checkpoints)
+    return path, step
+
+def append_resume_log(run_dir: str | Path, message: str) -> None:
+    """Print message and append it, with the time and the Slurm job, to resume_log.txt in run_dir."""
+    array_job = os.environ.get("SLURM_ARRAY_JOB_ID")
+    job = f"{array_job}_{os.environ.get('SLURM_ARRAY_TASK_ID')}" if array_job else os.environ.get("SLURM_JOB_ID", "local")
+    line = f"{datetime.datetime.now().astimezone():%Y-%m-%d %H:%M:%S} job {job}: {message}"
+    print(line)
+    with (Path(run_dir) / "resume_log.txt").open("a") as f:
+        f.write(f"{line}\n")
 
 def save_training_config(filepath, config_dict):
     with open(filepath, "w") as f:
@@ -77,3 +103,28 @@ def load_training_config_from_model(model_path):
     with open(config_path, "r") as f:
         config = json.load(f)
     return config
+
+
+def hrl_variant_from_config(
+    config: dict, default_variant: dict, default_survey_steps: int
+) -> tuple[dict, int]:
+    """
+    The meta agent variant (the HierarchicalEnv settings of a preset in train_HRL(ppo).py) and the survey budget in
+    AUV steps of an HRL run, from HRL_VARIANT in its training config. Runs started before the config saved
+    HRL_VARIANT get the defaults.
+    """
+    if "HRL_VARIANT" not in config:
+        return dict(default_variant), default_survey_steps
+    variant = dict(config["HRL_VARIANT"])
+    for key in ("preset", "seed", "survey"):  # not settings of HierarchicalEnv
+        variant.pop(key, None)
+    survey_steps = variant.pop("survey_steps")
+    return variant, survey_steps
+
+
+def hrl_survey_from_config(config: dict) -> dict:
+    """The survey an HRL run trained in (options, end goal, sources), from HRL_VARIANT in its training config.
+
+    Empty for runs before run 6, which all use the trained sub-agents and the visit goal.
+    """
+    return dict(config.get("HRL_VARIANT", {}).get("survey", {}))

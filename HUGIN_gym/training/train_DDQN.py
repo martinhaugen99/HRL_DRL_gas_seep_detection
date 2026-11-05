@@ -7,7 +7,7 @@ import pickle # saving the stats
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import CheckpointCallback
 
-from HUGIN_gym.utils.io import confirm_overwrite
+from HUGIN_gym.utils.io import append_resume_log, confirm_overwrite, find_latest_checkpoint
 from HUGIN_gym.envs.wrappers.DynamicEpisodeLengthWrapper import DynamicEpisodeLengthWrapper
 from HUGIN_gym.envs.wrappers.FilterObservationWrapper import FilterObservationWrapper
 from HUGIN_gym.callbacks.EpisodeStatsCallback import EpisodeStatsCallback
@@ -21,10 +21,11 @@ def main():
     torch.set_num_threads(1) # the network is tiny: extra torch threads only compete with the env workers for CPU
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", help="run name, i.e. the output folder in ../trained-agents (default: NAME below)")
+    parser.add_argument("--resume", action="store_true", help="continue the run in ../trained-agents/<name> from its newest checkpoint")
     args = parser.parse_args()
 
-    MAX_EPS_LEN = 230
-    NUM_ENVS = 12
+    MAX_EPS_LEN = 460
+    NUM_ENVS = 24
     GP =True
     ACCURACY_GOALS = [0.9,1.0,1.0]
     SUB_AGENT_TRAIN_ON_GP = True
@@ -51,9 +52,11 @@ def main():
    
 
     saving_location = f"../trained-agents/{NAME}"
-    loading_location = "../trained-agents/..._what_so_ever_..."
-    
-    confirm_overwrite(saving_location)
+
+    if args.resume:
+        checkpoint_path, checkpoint_step = find_latest_checkpoint(saving_location, "DQN_checkpoint")
+    else:
+        confirm_overwrite(saving_location)
 
     def episode_length_schedule(local_step):
         return MAX_EPS_LEN  # Spaceholder for a more complex function
@@ -75,6 +78,9 @@ def main():
             else:
                 env.use_c_map = True
             env.agent_type = AGENT_TYPE
+            if AGENT_TYPE == "PLUME": # start near the plume and vary its size (range and margin are set in HUGIN_env.py)
+                env.spawn_near_plume = True
+                env.vary_plume_size = True
             env = DynamicEpisodeLengthWrapper(env, schedule_fn=episode_length_schedule) # spaceholder for use of a Dynamic Episode Length
              # Filtering the Obs space dependant on the agent
             if GP:
@@ -93,13 +99,10 @@ def main():
 
     env_fns = [make_env() for _ in range(NUM_ENVS)]
     env = VecMonitor(SubprocVecEnv(env_fns)) # records episode reward/length for tensorboard, obs/rewards pass through unchanged
-    policy_kwargs = dict(features_extractor_class=Agent)
+    policy_kwargs = dict(features_extractor_class=Agent, net_arch=[128, 128])     # network size 64x64
     
-    load_existing = False  # switch to False to train from scratch
-
-    if load_existing:
-        model = DQN.load(f"{loading_location}/DQN_scratch",env=env,tensorboard_log="./tensorboard_logs/")
-        model.load_replay_buffer(f"{loading_location}/DQN_replay_buffer.pkl")
+    if args.resume: # the replay buffer is not part of the checkpoint, so it starts empty
+        model = DQN.load(checkpoint_path, env=env, tensorboard_log=f"{saving_location}/tensorboard")
     else:
         model = DQN(
             "MultiInputPolicy", # MultiInputPolicy for a dict observation space and MlpPolicy for a flat observation space
@@ -108,11 +111,11 @@ def main():
             buffer_size=800_000, #800_000, #800k
             learning_starts=400_000,#10k
             batch_size=128,
-            gamma=0.9945,# 0.997, # ~N=100 => g=0.99, now 41x41 -> N=440 => g= 0.9977
+            gamma=0.995,# 0.997, # ~N=100 => g=0.99, now 41x41 -> N=440 => g= 0.9977
             target_update_interval=50_000,
             train_freq=4,
             gradient_steps=4,
-            exploration_fraction=0.8,
+            exploration_fraction=0.2,
             exploration_final_eps=0.05,  #0 .1
             verbose=0,
             policy_kwargs=policy_kwargs, # CNN as feature extractor!!
@@ -123,20 +126,24 @@ def main():
     # INIT (insert here)
     # custom_callback = CustomWandbCallback()  # For your mean_q logging
 
-    max_steps =  30_000_000
-    checkpoint_steps = 2_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
-    stats_steps = 5_000_000 // NUM_ENVS # save episode stats every n steps (each file holds all episodes so far)
+    max_steps =  100_000_000
+    checkpoint_steps = 10_000_000 // NUM_ENVS # save the model every n steps, adjusted for number of parallel envs
     # --- get max_return safely before SubprocVecEnv ---
 
-    stats_callback = EpisodeStatsCallback(max_episode_length=MAX_EPS_LEN,save_freq=stats_steps, NUM_ENVS=NUM_ENVS,address=f"{saving_location}/episode_stats",N_states=N_STATES,GP=GP) # save every n steps, max episode length for _on_step being called only at the end of every episode
+    # episode stats are saved with every checkpoint, so a resumed run continues from matching stats (each file holds all episodes so far, so only the newest is kept)
+    stats_callback = EpisodeStatsCallback(max_episode_length=MAX_EPS_LEN,save_freq=checkpoint_steps, NUM_ENVS=NUM_ENVS,address=f"{saving_location}/episode_stats",N_states=N_STATES,GP=GP) # save every n steps, max episode length for _on_step being called only at the end of every episode
     checkpoint_callback = CheckpointCallback(save_freq=checkpoint_steps,save_path=f"{saving_location}/",name_prefix="DQN_checkpoint",save_replay_buffer=False) # True if desired
 
-    # --- Saving a big DICT with all hyperparameters:---
-    build_training_config(model,AGENT_TYPE,keys_you_want_to_keep,agent_reward_path,max_steps,MAX_EPS_LEN,checkpoint_steps,saving_location,kernel_config=kernel_config if GP else None)
+    if args.resume: # keep the config (and start time) the run was started with
+        append_resume_log(saving_location, f"resumed from {checkpoint_path.name}, {stats_callback.load_snapshot(up_to_step=checkpoint_step)}")
+    else:
+        # --- Saving a big DICT with all hyperparameters:---
+        build_training_config(model,AGENT_TYPE,keys_you_want_to_keep,agent_reward_path,max_steps,MAX_EPS_LEN,checkpoint_steps,saving_location,kernel_config=kernel_config if GP else None)
 
-    
+
     # -- TRAINING --
-    model.learn(total_timesteps=max_steps, callback=[stats_callback, checkpoint_callback], progress_bar=True) #,wandb_callback,custom_callback
+    # a resumed run continues its step count, exploration schedule and tensorboard curves up to max_steps
+    model.learn(total_timesteps=max_steps - model.num_timesteps, callback=[stats_callback, checkpoint_callback], progress_bar=True, reset_num_timesteps=not args.resume) #,wandb_callback,custom_callback
 
     # --SAVING--
 

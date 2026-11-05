@@ -3,57 +3,246 @@ import numpy as np
 import time
 
 class HierarchicalEnv(gym.Env):
-    def __init__(self, base_env, options, gamma=0.99,MAX_OPT_LENGTH=5,ACCURACY_GOALS = None,GP=True):
+    META_STATES = ("full", "minimal", "minimal_values", "gas", "gas_no_time")
+    REWARD_MODES = ("cells", "cells_fixed", "map_gain")
+    IDLE_COST = 2 / 3 # per AUV step without progress, in the new reward modes: 3 idle steps cost the old -2, for every option length
+    MAP_GAIN_WEIGHT = 200.0 # reward_mode "map_gain": for a perfect map; about the new-cell pay of a whole episode
+    STD_GAIN_WEIGHT = 100.0 # reward_mode "map_gain": for lowering the mean GP std from 1 to 0, which pays while no gas is found
+
+    def __init__(self, base_env, options, gamma=0.99,MAX_OPT_LENGTH=5,ACCURACY_GOALS = None,GP=True,
+                 option_lengths=None, max_primitive_steps=None, smdp_discount=False, mean_option_reward=False,
+                 decision_cost=0.0, meta_state="full", reward_mode="cells"):
+        """
+        option_lengths: the numbers of steps a sub-agent can run per meta decision (default [MAX_OPT_LENGTH]).
+            The meta agent picks the sub-agent and the length together: action = option index * len(option_lengths) + length index.
+        max_primitive_steps: survey budget in base env steps. The episode is truncated when it is used up.
+        smdp_discount: options may run different numbers of steps. Each decision reports its discount
+            gamma**option_length in info["discount"], which SMDPDiscountCallback passes to SMDPDictRolloutBuffer.
+        mean_option_reward: reward a decision with the mean of its step rewards instead of their sum.
+            The goal bonuses and the penalties still count in full.
+        decision_cost: subtracted once per decision, so fewer and longer options pay off slightly.
+        meta_state: what the meta agent observes. "full": the base env's observation. "minimal": time used, the three
+            coverages, plume found and the GP uncertainty. "minimal_values": minimal plus the sub-agents' value estimates.
+            "gas": what the end goal checks and what is left to do near gas, and the last decision. None of it reveals how
+            many plumes there are. "gas_no_time": the same without the time used.
+        reward_mode: "cells": the reward of runs 4 and 5. "cells_fixed": the same idea, with the plume agent paid for plume
+            cells, progress counted as the end goal counts it, and the same idle cost for every option length.
+            "map_gain": pays for a better map (map_score) and a lower mean GP std, whichever option caused it. This uses
+            the true map in the training reward only: the meta agent never observes it.
+        """
         super().__init__()
         self.base_env = base_env # gp_env lol
         #self.base_env.unwrapped.HRL = True
         self.options = options
         self.gamma = gamma
-        self.max_opt_length = MAX_OPT_LENGTH
-        self.accuracy_goals = ACCURACY_GOALS if ACCURACY_GOALS else self.base_env.accuracy_goals 
+        self.option_lengths = list(option_lengths) if option_lengths else [MAX_OPT_LENGTH]
+        self.max_primitive_steps = max_primitive_steps
+        self.smdp_discount = smdp_discount
+        self.mean_option_reward = mean_option_reward
+        self.decision_cost = decision_cost
+        self.meta_state = meta_state
+        self.reward_mode = reward_mode
+        if reward_mode not in self.REWARD_MODES:
+            raise ValueError(f"reward_mode must be one of {self.REWARD_MODES}, not {reward_mode!r}")
+        if reward_mode != "cells" and not GP:
+            raise ValueError("The new reward modes read the GP map, so they need the GP.")
+        if smdp_discount and mean_option_reward:
+            raise ValueError("Choose smdp_discount or mean_option_reward: the mean reward uses one fixed discount per decision.")
+        if len(self.option_lengths) > 1 and not (smdp_discount or mean_option_reward):
+            raise ValueError("Options of different lengths need smdp_discount or mean_option_reward.")
+        if meta_state not in self.META_STATES:
+            raise ValueError(f"meta_state must be one of {self.META_STATES}, not {meta_state!r}")
+        if meta_state != "full" and (max_primitive_steps is None or not GP):
+            raise ValueError("The minimal meta states need max_primitive_steps (time used) and the GP (plume found, uncertainty).")
+        self.accuracy_goals = ACCURACY_GOALS if ACCURACY_GOALS else self.base_env.accuracy_goals
         self.base_env.accuracy_goals = self.accuracy_goals# NOTE, for the expert training we used 0.9, but for HRL we set the level a bit lower
 
-        # Action space: choose option
-        self.action_space = gym.spaces.Discrete(len(options))
+        # Action space: choose option and its length
+        self.action_space = gym.spaces.Discrete(len(options) * len(self.option_lengths))
 
-        # Observation space: SAME as base env
-        self.observation_space = base_env.observation_space
+        # Observation space: the base env's, or the minimal meta state
+        self.observation_space = self._meta_observation_space(base_env.observation_space)
         self.current_obs = None
+        self.primitive_steps = 0
 
-        self.visualise_env = False
+        self.visualise_env = False # Meshcat view: label of the sub-agent in control and a trail marker per AUV step
+        self.step_delay = 0.0 # seconds to wait after each AUV step in the Meshcat view
+        self.option_colors = [0x00FF00] * len(options) # label and trail color (0xRRGGBB) per option in the Meshcat view
         self.no_progress_steps=0
         self.once_per_episode=True # for pure GT run, GT HRL and GT subagents
         self.GP=GP
         self.turn_counter = 0
         self.test_HRL = False
+        self.done_counts = (0, 0) # plume and border cells done, as the end goal counts them
+        self.last_score = 0.0 # reward_mode "map_gain"
+        self.last_mean_std = 1.0 # reward_mode "map_gain"
+        self.last_option = None # meta state "gas"
+        self.last_idle = False # meta state "gas"
     def reset(self, **kwargs):
         obs, info = self.base_env.reset(**kwargs)
+        for option in self.options:
+            if hasattr(option, "reset"): # scripted options keep a plan per episode (SweepOption)
+                option.reset()
         self.current_obs = obs
         self.no_progress_steps=0
         self.once_per_episode=True # for pure GT run, GT HRL and GT subagents
         self.turn_counter = 0
-        return obs, info
+        self.primitive_steps = 0
+        self.last_option = None
+        self.last_idle = False
+        if self.reward_mode != "cells" or self.meta_state.startswith("gas"):
+            self.done_counts = self._count_done()
+        if self.reward_mode == "map_gain":
+            self.last_score = self.base_env.map_score()
+            self.last_mean_std = self.base_env.unwrapped.MEAN_uncertainty
+        return self._meta_observation(obs), info
 
-    def step(self, option_idx):
+    @staticmethod
+    def action_names(option_names, option_lengths):
+        """Names of the meta actions in action order, e.g. space_2, space_5, plume_2, ..."""
+        return [f"{name}_{length}" for name in option_names for length in option_lengths]
+
+    def _decode_action(self, meta_action):
+        """Option index and number of steps of a meta action."""
+        option_idx, length_idx = divmod(int(meta_action), len(self.option_lengths))
+        return option_idx, self.option_lengths[length_idx]
+
+    def _meta_observation_space(self, base_space):
+        if self.meta_state == "full":
+            return base_space
+        unit = gym.spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+        if self.meta_state.startswith("gas"):
+            keys = ("space_coverage", "plume_share", "border_share", "plume_found", "gp_uncertainty", "unknown_share", "lowest_patch_share", "nearest_unfinished", "last_idle")
+            if self.meta_state == "gas":
+                keys = ("time_used", *keys)
+            spaces = {key: unit for key in keys}
+            spaces["last_option"] = gym.spaces.Box(low=0, high=1, shape=(len(self.options),), dtype=np.float32)
+            return gym.spaces.Dict(spaces)
+        keys = ("time_used", "space_coverage", "plume_coverage", "border_coverage", "plume_found", "gp_uncertainty")
+        spaces = {key: unit for key in keys}
+        if self.meta_state == "minimal_values":
+            spaces["subagent_values"] = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(len(self.options),), dtype=np.float32)
+        return gym.spaces.Dict(spaces)
+
+    def _meta_observation(self, obs):
+        """What the meta agent sees of the full observation obs (the sub-agents always get the full one)."""
+        if self.meta_state == "full":
+            return obs
+        if self.meta_state.startswith("gas"):
+            return self._gas_observation(obs)
+        base = self.base_env.unwrapped
+        meta_obs = {
+            "time_used": np.array([self.primitive_steps / self.max_primitive_steps], dtype=np.float32),
+            "space_coverage": obs["space_coverage"],
+            "plume_coverage": obs["plume_coverage"],
+            "border_coverage": obs["border_coverage"],
+            # before the GP finds a plume, the plume belief is only the corner cells, so the coverages show 1.0
+            "plume_found": np.array([float(base.maxN_over_thresh > self.base_env.N_corners)], dtype=np.float32),
+            "gp_uncertainty": np.array([min(base.MEAN_uncertainty, 1.0)], dtype=np.float32),
+        }
+        if self.meta_state == "minimal_values":
+            values = np.array([option.value(obs) for option in self.options], dtype=np.float32)
+            # symlog: the sub-agents' returns have different scales
+            meta_obs["subagent_values"] = np.sign(values) * np.log1p(np.abs(values))
+        return meta_obs
+
+    def _gas_observation(self, obs):
+        """The meta state "gas": all from the GP estimate and the survey so far, never from the true map."""
+        gp_env = self.base_env
+        base = gp_env.unwrapped
+        plume_share, border_share = gp_env.goal_shares(obs)
+        ix, iy, _iz = base._pos_to_idx(base.state["x"], base.state["y"], base.state["z"])
+        lowest_share, nearest = gp_env.gas_summary(ix, iy)
+        values = {
+            "space_coverage": obs["space_coverage"][0],
+            "plume_share": plume_share,
+            "border_share": border_share,
+            # before the GP finds a plume, the plume belief is only the corner cells
+            "plume_found": float(base.maxN_over_thresh > gp_env.N_corners),
+            "gp_uncertainty": min(base.MEAN_uncertainty, 1.0),
+            "unknown_share": gp_env.largest_unknown_area() / gp_env.GP_std.size, # the end goal needs this to be small
+            "lowest_patch_share": lowest_share,
+            "nearest_unfinished": min(nearest / np.hypot(*gp_env.GP_std.shape), 1.0),
+            "last_idle": float(self.last_idle),
+        }
+        if self.meta_state == "gas":
+            values["time_used"] = self.primitive_steps / self.max_primitive_steps
+        meta_obs = {key: np.array([value], dtype=np.float32) for key, value in values.items()}
+        last_option = np.zeros(len(self.options), dtype=np.float32)
+        if self.last_option is not None:
+            last_option[self.last_option] = 1.0
+        meta_obs["last_option"] = last_option
+        return meta_obs
+
+    def _count_done(self):
+        """The plume and border cells done so far, as the end goal counts them."""
+        gp_env = self.base_env
+        base = gp_env.unwrapped
+        corners = gp_env.corner_mask[:, :, 0]
+        done = gp_env.done_cells()
+        return (
+            int(np.sum(base.GT_c_over_threshold_maps[:, :, 0] & ~corners & done)),
+            int(np.sum(base.GT_c_around_threshold_maps[:, :, 0] & ~corners & done)),
+        )
+
+    def _progress_reward(self, option_idx, next_obs, new_visited):
+        """The step reward of the new reward modes, before the time penalty. Returns the reward and the part of it that
+        also counts on a step with a goal bonus or an edge hit (where the rest of the step reward is replaced)."""
+        before = self.done_counts
+        self.done_counts = self._count_done()
+        new_plume = max(self.done_counts[0] - before[0], 0)
+        new_border = max(self.done_counts[1] - before[1], 0)
+        idle_cost = self.IDLE_COST if new_visited == 0 and new_plume == 0 and new_border == 0 else 0.0
+
+        if self.reward_mode == "map_gain":
+            score = self.base_env.map_score()
+            mean_std = self.base_env.unwrapped.MEAN_uncertainty
+            gain = self.MAP_GAIN_WEIGHT * (score - self.last_score) + self.STD_GAIN_WEIGHT * (self.last_mean_std - mean_std)
+            self.last_score = score
+            self.last_mean_std = mean_std
+            return gain - idle_cost, gain
+
+        plume_share, border_share = self.base_env.goal_shares(next_obs)
+        match option_idx:
+            case 0: # space or sweep: pays when no found gas is waiting
+                unfinished = new_plume > 0 or new_border > 0 or plume_share < self.accuracy_goals[1] or border_share < self.accuracy_goals[2]
+                reward = 0.0 if unfinished else new_visited / 6
+            case 1: # plume agent: pays for plume cells
+                reward = (new_plume + new_visited) / 6 if new_plume > 0 else new_visited / 12
+            case _: # border agent: pays for border cells
+                reward = (new_border + new_visited) / 6 if new_border > 0 else new_visited / 12
+        return reward - idle_cost, 0.0
+
+    def step(self, meta_action):
+        option_idx, target_length = self._decode_action(meta_action)
         option = self.options[option_idx]
+        progress_before = (int(np.sum(self.base_env.unwrapped.state["visited_map"])), self.done_counts)
 
-        total_reward = 0
+        shaping_reward = 0 # the per-step rewards of the meta agent, discounted inside the option
+        event_reward = 0 # goal bonuses (40) and border penalties (-4) from the base env
         discount = 1
         done = False
         trunc = False
         #trajectory_info = []
-        
+
         obs = self.current_obs
-        
+        start_step = self.primitive_steps
+
         #trajectory_info.append(state)
         option_length = 0
         self.base_env.option_length = option_length
+        if self.visualise_env:
+            label = f"Sub-agent: {option.name}"
+            if len(self.option_lengths) > 1:
+                label += f" ({target_length} steps)"
+            self.base_env.unwrapped.renderer.show_label([(label, self.option_colors[option_idx])])
 
         while True:
-            
+
             action = option.act(obs)
             action = int(action)
             option_length +=1
+            self.primitive_steps += 1
             self.base_env.option_length = option_length
             next_obs, reward_debug , done, trunc, info = self.base_env.step(action) # we are not interested in the reward from the base env
             #trajectory_info.append(info)
@@ -66,8 +255,8 @@ class HierarchicalEnv(gym.Env):
                     reward_debug = meta_reward
 
             if self.visualise_env:
-                self.base_env.unwrapped.step_sim() # step_sim only uses the self.state # NOTE: only works IF GP ACTIVATED
-                #time.sleep(0.07) #to make vis better
+                self.base_env.unwrapped.step_sim(self.option_colors[option_idx]) # step_sim only uses the self.state # NOTE: only works IF GP ACTIVATED
+                time.sleep(self.step_delay)
             
             current_visited_sum = np.sum(self.base_env.unwrapped.state["visited_map"])
             current_c_over_sum =(np.sum(self.base_env.unwrapped.state["c_over_threshold_map"]))
@@ -82,7 +271,10 @@ class HierarchicalEnv(gym.Env):
             # -- Reward Design --
             #       SPACE
             reward = 0
-            if option_idx == 0: 
+            paid_on_events = 0.0
+            if self.reward_mode != "cells":
+                reward, paid_on_events = self._progress_reward(option_idx, next_obs, current_visited_sum-self.base_env.unwrapped.old_visited_sum)
+            elif option_idx == 0:
                 if (current_c_over_sum-self.base_env.unwrapped.old_c_over_sum)>0.0 or (current_c_around_sum-self.base_env.unwrapped.old_c_around_sum)>0.0 or (next_obs["plume_coverage"][0])<self.accuracy_goals[1] or (next_obs["border_coverage"][0])<self.accuracy_goals[1]:
                     reward = 0
                 else:
@@ -115,19 +307,32 @@ class HierarchicalEnv(gym.Env):
             #print(reward)
             reward -= 1.0 # TEMP DISCOUNT :encouraging faster option changes
             
-            if not done and reward_debug!=-4.0 and reward_debug!=40.0:
-                total_reward += discount * reward
-            elif reward_debug==40.0:
-                total_reward +=discount * reward_debug
-            elif reward_debug==-4.0:
-                total_reward +=discount * reward_debug
+            if reward_debug==40.0 or reward_debug==-4.0:
+                event_reward += discount * reward_debug # replaces the step's reward
+                shaping_reward += discount * paid_on_events
             else:
-                total_reward += discount * reward
+                shaping_reward += discount * reward
             discount *= self.gamma
 
-            if done or trunc or self.no_progress_steps>2 or option_length >=self.max_opt_length: #! >1
-                if self.no_progress_steps>2:
-                    total_reward-=2.0 # penalty for no progress!
+            if self.max_primitive_steps is not None and self.primitive_steps >= self.max_primitive_steps:
+                trunc = True # survey budget used up
+
+            if done or trunc or self.no_progress_steps>2 or option_length >=target_length: #! >1
+                if not (done or trunc) and option_length < target_length and not (self.smdp_discount or self.mean_option_reward):
+                    # the meta agent discounts each decision by gamma**MAX_OPT_LENGTH, which is only exact for full-length options
+                    raise RuntimeError(
+                        f"Option ended after {option_length} of {target_length} steps while the episode goes on. "
+                        "The meta agent's discount gamma**MAX_OPT_LENGTH needs every such option to run MAX_OPT_LENGTH "
+                        "steps (options end after 3 steps without progress, so use MAX_OPT_LENGTH <= 3), "
+                        "or smdp_discount=True for a discount of gamma**option_length per decision."
+                    )
+                if self.mean_option_reward:
+                    total_reward = shaping_reward / option_length + event_reward
+                else:
+                    total_reward = shaping_reward + event_reward
+                if self.reward_mode == "cells" and self.no_progress_steps>2:
+                    total_reward-=2.0 # penalty for no progress! A 2-step option can never reach this: the new modes have IDLE_COST instead
+                total_reward -= self.decision_cost
 
                 #option.should_terminate(obs,next_obs, threshold1 = self.base_env.c_threshold)
                 # if self.visualise_env:
@@ -143,11 +348,19 @@ class HierarchicalEnv(gym.Env):
         #total_reward = total_reward/option_length
         # -- logging the option behaviour -- (NOTE that the info is also still coming from the base env. FIX IT!)
         
+        if self.meta_state.startswith("gas"):
+            if self.reward_mode == "cells":
+                self.done_counts = self._count_done()
+            self.last_option = option_idx
+            self.last_idle = (int(np.sum(self.base_env.unwrapped.state["visited_map"])), self.done_counts) == progress_before
         info["option"] = option_idx
         info["option_length"] = option_length
+        info["discount"] = self.gamma**option_length # of this decision, for SMDPDiscountCallback
+        info["survey_fraction"] = start_step / self.max_primitive_steps if self.max_primitive_steps else 0.0 # when the decision was made
+        info["survey_steps"] = self.primitive_steps
         #info["trajectory"]=trajectory_info
 
-        return next_obs, total_reward, done, trunc, info
+        return self._meta_observation(next_obs), total_reward, done, trunc, info
 
     def _compute_meta_subgoal_reward(self, obs):
         if self.once_per_episode == False and (obs["plume_coverage"][0]<self.accuracy_goals[1] or obs["border_coverage"][0]< self.accuracy_goals[2]):
