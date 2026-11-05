@@ -45,7 +45,8 @@ def plot_with_std(ax, x, mean, std, color, ylabel, ylim=None, to_pct=False):
         upper = np.clip(upper, 0, 100)
 
     ax.plot(x, mean, color=color, lw=2)
-    ax.fill_between(x, lower, upper, color=color, alpha=0.25)
+    # rasterized: as one vector polygon of ~2x the points, long runs get cut off when the SVG is converted to PDF
+    ax.fill_between(x, lower, upper, color=color, alpha=0.25, rasterized=True)
 
     ax.set_xlabel("Episode", fontsize=14)
     ax.set_ylabel(ylabel, fontsize=14)
@@ -61,7 +62,8 @@ def plot_reward_curves(ax, rewards):
     N = len(rewards)
 
     for i in range(0, N, step):
-        ax.plot(rewards[i], color=cmap(i / max(1, N - 1)))
+        # rasterized: hundreds of thousands of lines would make the SVG far too large as vectors
+        ax.plot(rewards[i], color=cmap(i / max(1, N - 1)), rasterized=True)
 
     norm = Normalize(vmin=1, vmax=N)
     sm = ScalarMappable(cmap=cmap, norm=norm)
@@ -128,7 +130,7 @@ fig.suptitle(f"Agent: {agent_type}  |  Algorithm: {algorithm}", fontsize=18)
 
 # --- Save ---
 plt.tight_layout()
-figpath = os.path.join(base_path, "training_stats.png")
-plt.savefig(figpath)
+figpath = os.path.join(base_path, "training_stats.svg")
+plt.savefig(figpath, format="svg", dpi=300)  # dpi only applies to the rasterized reward curves
 os.system(f"display {figpath}")
 #plt.show()

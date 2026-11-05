@@ -40,7 +40,7 @@ def main():
     MAX_EPS_LEN = config["max_episode_length"]
     NUM_ENVS = config["num_envs"]
     GP = config["gp"]
-    ACCURACY_GOALS = [0.90, 1.0, 0.90]
+    ACCURACY_GOALS = [0.90, 0.9, 0.90] #Changing target coverage to 90% to ensure stoppage by coverage
     SUB_AGENT_TRAIN_ON_GP = True
     AGENT_TYPE = "BORDER"
 

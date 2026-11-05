@@ -34,7 +34,7 @@ def make_test_env(
     kernel_config=None,
     HRL=False,
     SUB_AGENT_TRAIN_ON_GP=False,
-    ACCURACY_GOALS = [0.9,1.0,1.0]
+    ACCURACY_GOALS = [0.9,1.0,0.9]
 ):
 
     base_env = gym.make(
