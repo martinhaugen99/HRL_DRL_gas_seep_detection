@@ -1,6 +1,6 @@
 # Making the HRL survey better than a lawnmower: the changes so far
 
-**Date:** 2026-11-03. **Branch:** `martin`. **Status:** implemented and tested in simulation. The meta agent is trained on Fox (7 variants, 3 seeds, 5M decisions) and evaluated on 1,000 episodes, see run 6 in [the training documentation](training_documentation.md#run-6-hrl-survey-variants-jobs-43877934387813). The plume, border and space agents have not been retrained.
+**Date:** 2026-11-03. **Branch:** `main`. **Status:** implemented and tested in simulation. The meta agent is trained on Fox (7 variants, 3 seeds, 5M decisions) and evaluated on 1,000 episodes, see run 6 in [the training documentation](training_documentation.md#run-6-hrl-survey-variants-jobs-43877934387813). The plume, border and space agents have not been retrained.
 
 **The result in short:** a trained meta agent now uses 20 % fewer AUV steps than a lawnmower, with a better map and more than twice the turns. Against a simple rule it saves 1–3 % of the steps, and on the estimate goal it does not hold up as clearly better: it passes our full test on the planned episodes, but not on a second set. Most of the gain comes from the scripted sweep, the handover and the new end goal, not from learning.
 

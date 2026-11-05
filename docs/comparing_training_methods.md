@@ -1,6 +1,6 @@
 # Comparing DQN, PPO and SAC for the plume agent
 
-*Notes from 2026-09-26, branch `martin`.*
+*Notes from 2026-09-26, on a branch now merged into `main`.*
 
 **Question:** the previous thesis focused on SAC because it was found to work best. Is that really the case? To find out, all three methods (DQN, PPO, SAC) need to be trained and compared fairly.
 
