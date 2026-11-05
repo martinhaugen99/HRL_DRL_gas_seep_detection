@@ -68,7 +68,9 @@ def make_test_env(GP=True,AGENT_TYPE="PLUME", VIS_GP=True, VISUALISE = True,kern
 ###### test modes
 
 
-model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained-agents/DQN_compare_4223553/DQN_scratch.zip"#/space_diff_NEW_visited
+# Set this to your own trained DQN model. Mode 1 needs it. Run from the repository root, so the path starts at ../.
+# The trained models are not in the repository. train_DDQN.py saves a model as ../trained-agents/<run name>/DQN_scratch.zip.
+model_path_global = "../trained-agents/DQN_compare_4223553/DQN_scratch.zip"
 
 def test_agent():
     VISUALISE = True      # Meshcat / real-world simulator

@@ -128,8 +128,9 @@ def make_test_env(
 
 ###### test modes
 
-# Path to your SAC trained agent file (model.save(...))
-model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained-agents/SAC_compare_4223553/SAC_scratch.zip"
+# Set this to your own trained SAC model. Mode 1 needs it. Run from the repository root, so the path starts at ../.
+# The trained models are not in the repository. train_SAC.py saves a model as ../trained-agents/<run name>/SAC_scratch.zip.
+model_path_global = "../trained-agents/SAC_compare_4223553/SAC_scratch.zip"
 
 
 def test_agent():

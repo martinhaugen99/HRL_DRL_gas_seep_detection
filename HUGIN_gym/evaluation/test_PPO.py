@@ -86,9 +86,10 @@ def make_test_env(
 
 ###### test modes
 
-# Path to your PPO trained agent directory (where PPO_scratch is saved)
+# Set this to your own trained PPO model. Mode 1 needs it. Run from the repository root, so the path starts at ../.
+# The trained models are not in the repository. train_PPO.py saves a model as ../trained-agents/<run name>/PPO_scratch.zip.
 #model_path_global = "../trained-agents/PPO_border_GP_d_to_max_only_terminate_after_plume/PPO_scratch"
-model_path_global = "/Users/martinhaugen/Desktop/master/uio/fall26/trained-agents/PPO_compare_100M_4259604/PPO_scratch.zip"
+model_path_global = "../trained-agents/PPO_compare_100M_4259604/PPO_scratch.zip"
 
 def test_agent():
     VISUALISE = True  # Meshcat / real-world simulator
